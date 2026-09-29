@@ -1,0 +1,219 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8" />
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'" />
+  <title>Frequência Agent — Horários e regras</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: #f8fafc; color: #1e293b; font-size: 13px; }
+    .header { background: #1e293b; color: white; padding: 14px 24px; }
+    .header h1 { font-size: 15px; font-weight: 600; }
+    .header p { font-size: 11px; color: #94a3b8; margin-top: 2px; }
+    main { padding: 16px 24px 90px; }
+    section { background: white; border: 1px solid #e2e8f0; border-radius: 8px; padding: 14px 16px; margin-bottom: 14px; }
+    h2 { font-size: 12px; text-transform: uppercase; letter-spacing: .05em; color: #475569; margin-bottom: 4px; }
+    .hint { font-size: 11px; color: #64748b; margin-bottom: 10px; }
+    .row { display: flex; gap: 16px; flex-wrap: wrap; }
+    .field label { display: block; font-size: 11px; font-weight: 600; color: #64748b; margin-bottom: 4px; }
+    input, select { padding: 5px 7px; border: 1px solid #d1d5db; border-radius: 5px; font-size: 12px; background: white; width: 100%; font-family: inherit; }
+    input:invalid { border-color: #f87171; }
+    table { width: 100%; border-collapse: collapse; }
+    th { text-align: left; font-size: 11px; color: #475569; font-weight: 600; padding: 4px 6px; background: #f1f5f9; }
+    td { padding: 4px 6px; border-bottom: 1px solid #f1f5f9; vertical-align: middle; }
+    td.del { width: 30px; text-align: center; }
+    .vazio { color: #94a3b8; font-size: 12px; padding: 8px 6px; }
+    button { padding: 6px 12px; border-radius: 6px; font-size: 12px; font-weight: 500; cursor: pointer; border: 1px solid #d1d5db; background: white; color: #1e293b; }
+    button.primary { background: #1e293b; color: white; border-color: #1e293b; }
+    button.x { border: none; background: none; color: #94a3b8; font-size: 16px; padding: 0 4px; }
+    button.x:hover { color: #b91c1c; }
+    button.add { margin-top: 8px; }
+    button:disabled { opacity: .45; cursor: default; }
+    .bar { position: fixed; left: 0; right: 0; bottom: 0; background: white; border-top: 1px solid #e2e8f0; padding: 10px 24px; display: flex; gap: 10px; align-items: center; }
+    .bar .sp { flex: 1; font-size: 12px; color: #b45309; }
+    .msg { padding: 10px 12px; border-radius: 6px; font-size: 12px; margin-bottom: 12px; white-space: pre-wrap; }
+    .msg.ok { background: #dcfce7; color: #166534; }
+    .msg.err { background: #fee2e2; color: #991b1b; }
+    .msg.warn { background: #fffbeb; color: #92400e; border: 1px solid #fde68a; }
+    .msg.info { background: #e0f2fe; color: #075985; }
+  </style>
+</head>
+<body>
+  <div class="header">
+    <h1>Horários e regras</h1>
+    <p>Salvo nas abas CONFIG_* da planilha — vale para qualquer máquina que rodar o bot.</p>
+  </div>
+
+  <main>
+    <div id="msgs"><div class="msg info">Carregando da planilha...</div></div>
+
+    <section>
+      <h2>Padrão</h2>
+      <p class="hint">Vale para todo mundo que não tiver horário individual. Entrada até <b>padrão + tolerância</b> = "." ; depois = "P".</p>
+      <div class="row">
+        <div class="field" style="width:140px"><label>Entrada padrão</label><input type="time" id="entrada_padrao" /></div>
+        <div class="field" style="width:140px"><label>Tolerância (min)</label><input type="number" min="0" max="120" id="tolerancia_min" /></div>
+        <div class="field" style="width:220px"><label>Horário de corte</label><input type="time" id="horario_corte" />
+          <div class="hint" style="margin:3px 0 0">Antes disso o dia de hoje não é classificado.</div></div>
+      </div>
+    </section>
+
+    <section>
+      <h2>Horários individuais</h2>
+      <p class="hint">Quem entra em horário diferente do padrão. Tolerância vazia = usa a padrão. Vigência vazia = sem limite; use datas para mudar o horário de alguém sem perder o histórico.</p>
+      <div class="row" style="margin-bottom:8px">
+        <div class="field" style="width:260px"><label>Filtrar colaboradores por setor</label><select id="setor"></select></div>
+      </div>
+      <div id="t-horarios"></div>
+    </section>
+
+    <section>
+      <h2>Exceções de um dia</h2>
+      <p class="hint">Vale só na data informada. Use <b>entrada prevista</b> (ex.: avisou que chega às 10h) e/ou <b>código</b> (ex.: você já sabe que é atestado).</p>
+      <div id="t-excecoes"></div>
+    </section>
+
+    <section>
+      <h2>Apelidos</h2>
+      <p class="hint">Quando o nome no ponto é diferente do nome na planilha (ex.: nome cortado na BASE DE DADOS). Copie o nome exatamente como aparece no ponto.</p>
+      <div id="t-apelidos"></div>
+    </section>
+
+    <section>
+      <h2>Feriados</h2>
+      <p class="hint">O bot não classifica esses dias (ficam em branco, como os domingos).</p>
+      <div id="t-feriados"></div>
+    </section>
+
+    <datalist id="colabs"></datalist>
+  </main>
+
+  <div class="bar">
+    <span class="sp" id="dirty"></span>
+    <button id="btnRecarregar">Recarregar</button>
+    <button class="primary" id="btnSalvar" disabled>Salvar na planilha</button>
+  </div>
+
+  <script>
+    const $ = id => document.getElementById(id)
+    const CODIGOS = ['', '.', 'P', 'F', 'FE', 'FO', 'AT', 'AC', 'S', 'V', 'GL']
+    let colaboradores = []
+    const porAdm = new Map()
+
+    // Cada tabela: colunas → tipo do input. 'colab' mostra "ADM — NOME" e guarda só o ADM.
+    const TABELAS = {
+      horarios: [['adm', 'Colaborador', 'colab', 320], ['entrada', 'Entrada', 'time', 110], ['tolerancia_min', 'Tol. (min)', 'number', 90],
+        ['vigencia_inicio', 'Vigência início', 'date', 140], ['vigencia_fim', 'Vigência fim', 'date', 140], ['obs', 'Obs.', 'text']],
+      excecoes: [['data', 'Data', 'date', 140], ['adm', 'Colaborador', 'colab', 320], ['entrada_prevista', 'Entrada prevista', 'time', 120],
+        ['codigo', 'Código', 'codigo', 90], ['obs', 'Obs.', 'text']],
+      apelidos: [['nome_no_ponto', 'Nome no ponto', 'text', 320], ['adm', 'Colaborador na planilha', 'colab', 320], ['obs', 'Obs.', 'text']],
+      feriados: [['data', 'Data', 'date', 140], ['descricao', 'Descrição', 'text']],
+    }
+    // Campos que a tela não mostra mas precisam voltar pra planilha intactos.
+    const OCULTOS = { horarios: ['saida'] }
+    const dados = { horarios: [], excecoes: [], apelidos: [], feriados: [] }
+
+    function el(tag, props = {}, ...kids) { const e = document.createElement(tag); Object.assign(e, props); e.append(...kids); return e }
+    function marcar() { $('dirty').textContent = 'Alterações não salvas'; $('btnSalvar').disabled = false }
+    function msgs(list) { $('msgs').replaceChildren(...list.map(([k, t]) => el('div', { className: 'msg ' + k, textContent: t }))) }
+
+    const rotuloColab = adm => { const c = porAdm.get(adm); return c ? `${c.adm} — ${c.nome}` : adm }
+    const admDe = v => (/^\s*(\d+)/.exec(v || '') || [])[1] || String(v || '').trim()
+
+    function input(tipo, valor, onChange) {
+      if (tipo === 'codigo') {
+        const s = el('select')
+        for (const c of CODIGOS) s.append(el('option', { value: c, textContent: c || '—' }))
+        s.value = valor || ''
+        s.onchange = () => { onChange(s.value); marcar() }
+        return s
+      }
+      const i = el('input', { type: tipo === 'colab' ? 'text' : tipo })
+      if (tipo === 'colab') { i.setAttribute('list', 'colabs'); i.placeholder = 'ADM ou nome'; i.value = valor ? rotuloColab(valor) : '' }
+      else i.value = valor || ''
+      if (tipo === 'number') { i.min = 0; i.max = 120; i.placeholder = 'padrão' }
+      i.oninput = () => { onChange(tipo === 'colab' ? admDe(i.value) : i.value); marcar() }
+      if (tipo === 'colab') i.onchange = () => { const adm = admDe(i.value); if (porAdm.has(adm)) i.value = rotuloColab(adm) }
+      return i
+    }
+
+    function render(nome) {
+      const cols = TABELAS[nome]
+      const box = $('t-' + nome)
+      const head = el('tr', {}, ...cols.map(([, t, , w]) => { const th = el('th', { textContent: t }); if (w) th.style.width = w + 'px'; return th }), el('th'))
+      const body = el('tbody')
+      dados[nome].forEach((linha, idx) => {
+        body.append(el('tr', {},
+          ...cols.map(([k, , tipo]) => el('td', {}, input(tipo, linha[k], v => { linha[k] = v }))),
+          el('td', { className: 'del' }, el('button', { className: 'x', title: 'Remover', textContent: '×', onclick: () => { dados[nome].splice(idx, 1); render(nome); marcar() } })),
+        ))
+      })
+      const add = el('button', { className: 'add', textContent: '+ Adicionar', onclick: () => {
+        const nova = Object.fromEntries([...cols.map(([k]) => [k, '']), ...(OCULTOS[nome] || []).map(k => [k, ''])])
+        dados[nome].push(nova); render(nome); marcar()
+        box.querySelector('tbody tr:last-child input, tbody tr:last-child select')?.focus()
+      } })
+      box.replaceChildren(dados[nome].length ? el('table', {}, el('thead', {}, head), body) : el('div', { className: 'vazio', textContent: 'Nenhum cadastrado.' }), add)
+    }
+
+    function preencherColabs() {
+      const setor = $('setor').value
+      $('colabs').replaceChildren(...colaboradores
+        .filter(c => c.ativo && (!setor || c.setor === setor))
+        .map(c => el('option', { value: `${c.adm} — ${c.nome}`, label: c.setor })))
+    }
+
+    async function carregar() {
+      $('btnSalvar').disabled = true
+      const r = await window.agent.regrasCarregar()
+      if (!r.ok) return msgs([['err', r.message]])
+      colaboradores = r.colaboradores
+      porAdm.clear(); for (const c of colaboradores) porAdm.set(c.adm, c)
+
+      const setores = [...new Set(colaboradores.filter(c => c.ativo).map(c => c.setor).filter(Boolean))].sort()
+      $('setor').replaceChildren(el('option', { value: '', textContent: 'Todos os setores' }), ...setores.map(s => el('option', { value: s, textContent: s })))
+      $('setor').onchange = preencherColabs
+      preencherColabs()
+
+      for (const k of ['entrada_padrao', 'tolerancia_min', 'horario_corte']) {
+        $(k).value = r.regras.geral[k] || ''
+        $(k).oninput = marcar
+      }
+      for (const nome of Object.keys(TABELAS)) { dados[nome] = r.regras[nome]; render(nome) }
+
+      $('dirty').textContent = ''
+      msgs(r.abasFaltando.length
+        ? [['info', `As abas ${r.abasFaltando.join(', ')} ainda não existem — serão criadas ao salvar.`]]
+        : [])
+    }
+
+    $('btnRecarregar').onclick = () => {
+      if (!$('btnSalvar').disabled && !confirm('Descartar as alterações não salvas?')) return
+      carregar()
+    }
+
+    $('btnSalvar').onclick = async () => {
+      const vazia = l => Object.values(l).every(v => !String(v || '').trim())
+      const regras = {
+        geral: { entrada_padrao: $('entrada_padrao').value, tolerancia_min: $('tolerancia_min').value, horario_corte: $('horario_corte').value },
+      }
+      for (const nome of Object.keys(TABELAS)) regras[nome] = dados[nome].filter(l => !vazia(l))
+      $('btnSalvar').disabled = true
+      const r = await window.agent.regrasSalvar(regras)
+      if (!r.ok) {
+        $('btnSalvar').disabled = false
+        msgs([['err', 'Nada foi salvo. Corrija:\n• ' + r.erros.join('\n• ')], ...(r.avisos.length ? [['warn', r.avisos.join('\n')]] : [])])
+        window.scrollTo(0, 0)
+        return
+      }
+      for (const nome of Object.keys(TABELAS)) { dados[nome] = regras[nome]; render(nome) }
+      $('dirty').textContent = ''
+      msgs([['ok', 'Salvo na planilha.'], ...(r.avisos.length ? [['warn', r.avisos.join('\n')]] : [])])
+      window.scrollTo(0, 0)
+    }
+
+    window.addEventListener('beforeunload', e => { if (!$('btnSalvar').disabled) { e.preventDefault(); e.returnValue = '' } })
+    carregar()
+  </script>
+</body>
+</html>

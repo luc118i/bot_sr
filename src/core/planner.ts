@@ -25,7 +25,7 @@ export type Situacao =
   | 'ambiguo'
   | 'sem_linha_no_mes'
   | 'nao_encontrado'
-  | 'ausente_no_ponto'  // linha da planilha sem ninguém correspondente no ponto
+  | 'ausente_no_ponto'  // linha da planilha fora do ponto de quem logou (outro setor)
 
 export interface ItemPlano {
   situacao: Situacao
@@ -198,8 +198,9 @@ export function montarPlano(e: EntradaPlano): Plano {
       it.motivo = `Código forçado em CONFIG_EXCECOES linha ${forcado.linha} (não aparece no ponto)`
       classificar(it)
     } else {
-      it.situacao = it.valorAtual.trim() ? 'ja_lancado' : 'ausente_no_ponto'
-      it.motivo = 'Não aparece no HTML do ponto'
+      // O ponto só lista a equipe de quem logou; a aba tem todos os setores.
+      it.situacao = 'ausente_no_ponto'
+      it.motivo = 'Não aparece no HTML do ponto (outro setor/responsável)'
     }
     itens.push(it)
   }

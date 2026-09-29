@@ -30,6 +30,7 @@
     .card .l { font-size: 11px; color: #64748b; }
     .avisos { background: #fffbeb; border: 1px solid #fde68a; border-radius: 8px; padding: 10px 14px; margin-bottom: 14px; font-size: 12px; color: #92400e; }
     .avisos li { margin-left: 16px; margin-top: 3px; }
+    details { margin-top: 18px; font-size: 12px; color: #475569; } summary { cursor: pointer; }
     h2 { font-size: 12px; text-transform: uppercase; letter-spacing: .05em; color: #475569; margin: 18px 0 6px; }
     table { width: 100%; border-collapse: collapse; background: white; border: 1px solid #e2e8f0; border-radius: 8px; overflow: hidden; }
     th, td { text-align: left; padding: 6px 10px; border-bottom: 1px solid #f1f5f9; font-size: 12px; vertical-align: top; }
@@ -61,10 +62,12 @@
     <button class="primary" id="btnSim">Simular</button>
     <button class="danger" id="btnEsc" disabled>Escrever na planilha</button>
     <button id="btnRel">Relatórios</button>
+    <button id="btnRegras">Horários e regras</button>
+    <button id="btnDesfazerAnt" title="Escolhe o relatório de uma escrita já feita e apaga as células que o bot gravou">Desfazer escrita anterior...</button>
   </div>
 
   <main id="out">
-    <div class="msg info">Salve a tela de acompanhamento de ponto do dia (Ctrl+S → "Página da Web, completa" ou só HTML) depois de a lista carregar, escolha o arquivo e clique em Simular.</div>
+    <div class="msg info">Na tela de acompanhamento de ponto, escolha o dia e espere a lista carregar. Aperte F12 → aba Elements → botão direito em &lt;html&gt; → Copy → Copy outerHTML, cole num arquivo .html, escolha o arquivo aqui e clique em Simular.</div>
   </main>
 
   <script>
@@ -72,7 +75,7 @@
     const ROT = {
       escrever: 'Será escrito', revisar: 'Precisa de revisão', divergente: 'Já lançado — diverge do bot',
       nao_encontrado: 'Não encontrado na planilha', sem_linha_no_mes: 'Sem linha na aba do mês', ambiguo: 'Match ambíguo',
-      confere: 'Já lançado — confere', ja_lancado: 'Já lançado à mão', ausente_no_ponto: 'Não aparece no ponto',
+      confere: 'Já lançado — confere', ja_lancado: 'Já lançado à mão', ausente_no_ponto: 'Fora do seu ponto (outros setores)',
     }
     const ORDEM = ['escrever', 'revisar', 'divergente', 'nao_encontrado', 'sem_linha_no_mes', 'ambiguo', 'confere', 'ja_lancado', 'ausente_no_ponto']
     const COR = { escrever: '#166534', revisar: '#b45309', divergente: '#b91c1c', nao_encontrado: '#b91c1c', sem_linha_no_mes: '#b45309', ambiguo: '#b91c1c', confere: '#475569', ja_lancado: '#475569', ausente_no_ponto: '#475569' }
@@ -97,6 +100,7 @@
     }
 
     $('btnRel').onclick = () => window.agent.abrirRelatorios()
+    $('btnRegras').onclick = () => window.agent.abrirRegras()
 
     $('btnSim').onclick = async () => {
       if (!htmlPath) return msg('err', 'Escolha o HTML do ponto primeiro.')
@@ -104,7 +108,11 @@
       msg('info', 'Lendo o ponto e a planilha...')
       const r = await window.agent.simular({ data: $('data').value, htmlPath, forcar: $('forcar').checked })
       $('btnSim').disabled = false
-      if (!r.ok) return msg('err', r.message)
+      if (!r.ok) {
+        msg('err', r.message)
+        if (/Horários e regras/.test(r.message)) $('out').append(el('button', { textContent: 'Abrir Horários e regras', onclick: () => window.agent.abrirRegras() }))
+        return
+      }
       render(r.plano)
       $('btnEsc').disabled = r.plano.escritas.length === 0
     }
@@ -116,10 +124,33 @@
       const r = await window.agent.escrever()
       const box = el('div', { className: 'msg ' + (r.ok ? 'ok' : 'err') })
       box.textContent = r.ok
-        ? `Gravado: ${r.escritas.length} célula(s).` + (r.puladas.length ? `\nPuladas (já preenchidas): ${r.puladas.map(p => p.celula + '="' + p.valorEncontrado + '"').join(', ')}` : '')
+        ? `Gravado: ${r.escritas.length} célula(s): ${r.escritas.map(e => e.celula + '="' + e.codigo + '"').join(', ')}` +
+          (r.puladas.length ? `\nPuladas (já preenchidas): ${r.puladas.map(p => p.celula + '="' + p.valorEncontrado + '"').join(', ')}` : '')
+        : r.message
+      if (r.ok && r.escritas.length) {
+        const btn = el('button', { textContent: 'Desfazer esta escrita' })
+        btn.style.cssText = 'display:block;margin-top:8px'
+        btn.onclick = async () => {
+          if (!confirm(`Apagar as ${r.escritas.length} célula(s) gravadas pelo bot?\n\nSó são apagadas as que ainda tiverem exatamente o código que o bot gravou — o que alguém tiver mudado depois fica.`)) return
+          btn.disabled = true
+          mostrarDesfeita(await window.agent.desfazer())
+        }
+        box.append(btn)
+      }
+      $('out').prepend(box)
+    }
+
+    function mostrarDesfeita(r) {
+      if (!r.ok && r.cancelado) return
+      const box = el('div', { className: 'msg ' + (r.ok ? 'ok' : 'err') })
+      box.textContent = r.ok
+        ? `Escrita de ${r.data} desfeita: ${r.apagadas.length} célula(s) apagada(s)${r.apagadas.length ? ' (' + r.apagadas.join(', ') + ')' : ''}.` +
+          (r.mantidas.length ? `\nMantidas porque alguém mudou depois: ${r.mantidas.map(m => `${m.celula} (bot "${m.escritoPeloBot}" → agora "${m.valorEncontrado}")`).join(', ')}` : '')
         : r.message
       $('out').prepend(box)
     }
+
+    $('btnDesfazerAnt').onclick = async () => mostrarDesfeita(await window.agent.desfazerDeRelatorio())
 
     function render(p) {
       const out = $('out')
@@ -147,6 +178,14 @@
       for (const s of ORDEM) {
         const its = p.itens.filter(i => i.situacao === s)
         if (!its.length) continue
+        if (s === 'ausente_no_ponto') {
+          // O ponto só lista quem está sob a responsabilidade de quem logou; a
+          // aba do mês tem todos os setores. Não é pendência — só referência.
+          const lista = el('div', { className: 'mot', textContent: its.map(i => `${i.celula} ${i.nomePlanilha || 'ADM ' + i.adm}`).join(' · ') })
+          lista.style.cssText = 'font-size:12px;color:#64748b;padding:8px 0;line-height:1.6'
+          out.append(el('details', {}, el('summary', { textContent: `${ROT[s]} (${its.length}) — não é pendência, clique para ver` }), lista))
+          continue
+        }
         out.append(el('h2', { textContent: `${ROT[s]} (${its.length})` }))
         const tb = el('tbody')
         for (const i of its) {

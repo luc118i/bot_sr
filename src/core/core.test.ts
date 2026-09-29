@@ -9,7 +9,8 @@ import { validarData } from './planner'
 import { colunaA1, parseDataPlanilha, parseHora } from './tempo'
 import { normalize } from './normalize'
 import type { SheetGateway } from '../sheets/gateway'
-import { executarEscrita, simular } from '../service'
+import { desfazerEscrita, executarEscrita, simular } from '../service'
+import { carregarRegras, salvarRegras, validarRegras } from '../regras'
 
 const FIXTURE = path.resolve(__dirname, '..', '..', 'test', 'fixtures', 'ponto-sintetico.html')
 const LETRAS = ['D', 'S', 'T', 'Q', 'Q', 'S', 'S']
@@ -41,17 +42,25 @@ class MemoryGateway implements SheetGateway {
   async titulo() { return this.tit }
   async listarAbas() { return Object.keys(this.abas) }
   async lerGrid(aba: string) { return this.abas[aba] ?? null }
+  private pos(c: string): [number, number] {
+    const m = /^([A-Z]+)(\d+)$/.exec(c)!
+    return [+m[2]! - 1, [...m[1]!].reduce((n, ch) => n * 26 + ch.charCodeAt(0) - 64, 0) - 1]
+  }
   async lerCelulas(aba: string, celulas: string[]) {
-    return celulas.map(c => {
-      const m = /^([A-Z]+)(\d+)$/.exec(c)!
-      const col = [...m[1]!].reduce((n, ch) => n * 26 + ch.charCodeAt(0) - 64, 0)
-      return this.abas[aba]?.[+m[2]! - 1]?.[col - 1] ?? ''
-    })
+    return celulas.map(c => { const [r, k] = this.pos(c); return this.abas[aba]?.[r]?.[k] ?? '' })
   }
   async escrever(aba: string, valores: { celula: string; valor: string }[]) {
-    for (const v of valores) this.escritas.push({ aba, ...v })
+    for (const v of valores) {
+      this.escritas.push({ aba, ...v })
+      const [r, k] = this.pos(v.celula)
+      this.abas[aba]![r]![k] = v.valor
+    }
+  }
+  async limpar(aba: string, celulas: string[]) {
+    for (const c of celulas) { const [r, k] = this.pos(c); this.abas[aba]![r]![k] = '' }
   }
   async criarAba() {}
+  async substituirTabela(aba: string, linhas: string[][]) { this.abas[aba] = linhas.map(l => [...l]) }
 }
 
 // ── utilitários ─────────────────────────────────────────────────────────────
@@ -74,24 +83,31 @@ test('parseHora e datas da planilha', () => {
 
 // ── parser do ponto ─────────────────────────────────────────────────────────
 
-test('parser lê os três estados do ponto e ignora classes geradas', () => {
-  const { registros, avisos } = parsePontoHtml(fs.readFileSync(FIXTURE, 'utf-8'))
+test('parser lê os estados do ponto pela estrutura real (dia-resumido + posição)', () => {
+  const { data, registros, avisos } = parsePontoHtml(fs.readFileSync(FIXTURE, 'utf-8'))
   assert.deepEqual(avisos, [])
+  assert.equal(data, '2026-09-28')
   const por = Object.fromEntries(registros.map(r => [normalize(r.nome), r]))
-  assert.equal(registros.length, 8)
+  assert.equal(registros.length, 9)
   assert.equal(por['JOAO EXEMPLO DA SILVA']!.status, 'batido')
   assert.equal(por['JOAO EXEMPLO DA SILVA']!.entrada1, '07:58')
-  assert.equal(por['JOAO EXEMPLO DA SILVA']!.icone, 'verde')
+  // Triângulo amarelo (entrada + saída de almoço) — não previsto no plano,
+  // era ignorado pela primeira versão do parser.
+  assert.equal(por['JOAO EXEMPLO DA SILVA']!.icone, 'amarelo')
+  assert.equal(por['LUIZ EXCECAO OLIVEIRA']!.entrada1, '09:30')
   assert.equal(por['PEDRO TESTE DE ARAUJO']!.entrada1, '08:05')
   assert.equal(por['PAULO MODELO DA SILVA']!.status, 'sem_registro')
   assert.equal(por['ANDRE JOSE DE EXEMPLO']!.status, 'ferias')
   assert.equal(por['ANDRE JOSE DE EXEMPLO']!.entrada1, null)
+  // Entrada 1 vazia com Saída 1 preenchida: não chuta, vai pra revisão.
+  assert.equal(por['OTAVIO SEMENTRADA']!.status, 'desconhecido')
 })
 
 test('parser avisa quando o HTML não é a tela do ponto', () => {
   const r = parsePontoHtml('<html><body><p>Faça login</p></body></html>')
   assert.equal(r.registros.length, 0)
-  assert.match(r.avisos[0]!, /Nenhum ícone de status/)
+  assert.equal(r.data, null)
+  assert.match(r.avisos[0]!, /dia-resumido/)
 })
 
 // ── layout da aba do mês ────────────────────────────────────────────────────
@@ -187,7 +203,7 @@ test('simulação classifica cada caso do plano e nunca decide falta', async () 
   assert.match(por('RAIMUNDO DAS NEVES PRADO DOS SANTOS').motivo, /ADM 1417.*CONFIG_APELIDOS/)
   assert.equal(por('FELIPE SEMLINHA DE FARIA').situacao, 'sem_linha_no_mes')
   assert.equal(por('LUIZ EXCECAO OLIVEIRA').situacao, 'divergente')
-  assert.equal(por('SERGIO ATESTADO QUEIROZ').situacao, 'ja_lancado')
+  assert.equal(por('SERGIO ATESTADO QUEIROZ').situacao, 'ausente_no_ponto')
   assert.equal(por('NELSON AUSENTE CAMPOS').situacao, 'ausente_no_ponto')
   assert.ok(!plano.escritas.some(e => e.codigo === 'F'))
 })
@@ -217,7 +233,87 @@ test('escrita relê as células e pula quem foi preenchido depois da simulação
   assert.equal(plano2.escritas.length, 0)
 })
 
+test('recusa HTML do ponto de um dia diferente do escolhido', async () => {
+  const gw = cenario()
+  const html = fs.readFileSync(FIXTURE, 'utf-8') // linhas de 2026-09-28
+  await assert.rejects(simular(gw, { data: '2026-09-25', html, now: NOITE }), /é do dia 2026-09-28/)
+})
+
 test('recusa planilha de outro ano', async () => {
   const gw = cenario()
   await assert.rejects(simular(gw, { data: '2027-01-05', html: '', now: new Date(2027, 0, 6) }), /é de 2026/)
+})
+
+// ── tela "Horários e regras" ────────────────────────────────────────────────
+
+test('regras: salva na planilha e a simulação passa a usar o horário individual', async () => {
+  const gw = cenario()
+  const { regras } = await carregarRegras(gw)
+  assert.equal(regras.geral.entrada_padrao, '08:00')
+  assert.equal(regras.feriados[0]!.data, '2026-09-07') // dd/mm/aaaa da planilha → ISO na tela
+
+  regras.horarios.push({ adm: '2376', entrada: '09:00', saida: '', tolerancia_min: '', vigencia_inicio: '2026-09-01', vigencia_fim: '', obs: 'entra 9h' })
+  const v = await salvarRegras(gw, regras)
+  assert.deepEqual(v.erros, [])
+  assert.deepEqual(gw.abas['CONFIG_HORARIOS']!.at(-1), ['2376', '09:00', '', '', '01/09/2026', '', 'entra 9h'])
+
+  const plano = await simular(gw, { data: '2026-09-28', html: fs.readFileSync(FIXTURE, 'utf-8'), now: NOITE })
+  const pedro = plano.itens.find(i => i.adm === '2376')!
+  assert.equal(pedro.horario!.previsto, '09:00')
+  assert.match(pedro.horario!.origem, /CONFIG_HORARIOS/)
+})
+
+test('regras: bloqueia salvamento inválido e não toca na planilha', async () => {
+  const gw = cenario()
+  const antes = JSON.stringify(gw.abas['CONFIG_HORARIOS'])
+  const { regras } = await carregarRegras(gw)
+
+  regras.excecoes.push({ data: '2026-09-30', adm: '374', entrada_prevista: '', codigo: 'XX', obs: '' })
+  let v = await salvarRegras(gw, regras)
+  assert.match(v.erros.join('\n'), /código "XX"/)
+
+  regras.excecoes.pop()
+  regras.horarios.push({ adm: '76', entrada: '06:00', saida: '', tolerancia_min: '', vigencia_inicio: '2026-09-20', vigencia_fim: '', obs: '' })
+  v = await salvarRegras(gw, regras)
+  assert.match(v.erros.join('\n'), /ADM 76: dois horários/)
+
+  regras.horarios.pop()
+  regras.geral.entrada_padrao = ''
+  v = await salvarRegras(gw, regras)
+  assert.match(v.erros.join('\n'), /entrada_padrao/)
+  assert.equal(JSON.stringify(gw.abas['CONFIG_HORARIOS']), antes)
+})
+
+test('regras: avisa ADM que não existe na BASE DE DADOS', () => {
+  const v = validarRegras({
+    geral: { tolerancia_min: '5', entrada_padrao: '08:00', horario_corte: '18:00' },
+    horarios: [{ adm: '123456', entrada: '09:00', saida: '', tolerancia_min: '', vigencia_inicio: '', vigencia_fim: '', obs: '' }],
+    excecoes: [], apelidos: [], feriados: [],
+  }, [{ adm: '1', nome: 'X', setor: '', ativo: true }])
+  assert.deepEqual(v.erros, [])
+  assert.match(v.avisos[0]!, /123456/)
+})
+
+// ── desfazer ────────────────────────────────────────────────────────────────
+
+test('desfazer apaga só o que o bot gravou e mantém o que alguém mudou depois', async () => {
+  const gw = cenario()
+  const plano = await simular(gw, { data: '2026-09-28', html: fs.readFileSync(FIXTURE, 'utf-8'), now: NOITE })
+  const antesAH = gw.abas['Setembro']!.map(r => r[33] ?? '')
+  const r = await executarEscrita(gw, plano)
+  assert.equal(r.escritas.length, 4)
+
+  gw.abas['Setembro']![10 - 1]![33] = 'AT' // AH10: bot gravou "P", alguém trocou por "AT"
+  const d = await desfazerEscrita(gw, plano.aba, r.escritas)
+
+  assert.deepEqual(d.apagadas.sort(), ['AH16', 'AH8', 'AH9'].sort())
+  assert.deepEqual(d.mantidas, [{ celula: 'AH10', valorEncontrado: 'AT', escritoPeloBot: 'P' }])
+  const depoisAH = gw.abas['Setembro']!.map(r => r[33] ?? '')
+  // Tudo voltou ao estado de antes, menos a célula que alguém alterou.
+  assert.deepEqual(depoisAH.map((v, i) => (i === 9 ? antesAH[i] : v)), antesAH)
+  assert.equal(depoisAH[9], 'AT')
+
+  // Desfazer de novo não apaga nada (as células já estão vazias ou mudadas).
+  const d2 = await desfazerEscrita(gw, plano.aba, r.escritas)
+  assert.deepEqual(d2.apagadas, [])
 })

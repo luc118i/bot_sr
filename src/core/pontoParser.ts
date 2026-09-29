@@ -1,90 +1,110 @@
 import * as cheerio from 'cheerio'
-import type { AnyNode, Element } from 'domhandler'
+import type { Element } from 'domhandler'
 import { normalize } from './normalize'
 
 // Tela "acompanhamento de ponto" do centraldofuncionario.com.br — app React
 // Native Web. As classes (r-1k9400p...) são geradas no build e mudam sem aviso,
-// então NÃO são usadas como seletor. Âncoras estáveis:
-//   1. o ícone de status de cada linha: data-testid="exclamation-circle" (vermelho)
-//      ou "check-circle" (verde);
-//   2. a posição: o nome vem logo depois do ícone, e os horários (Entrada 1,
-//      Saída 1, ..., Saída 3) e o saldo vêm no bloco seguinte.
-// A "linha" de um colaborador é o maior ancestral do ícone que ainda contém SÓ
-// aquele ícone — funciona sem conhecer a profundidade exata da árvore.
+// então NÃO são usadas como seletor. Estrutura confirmada no HTML real
+// (outerHTML de 29/09/2026):
+//
+//   <div id="dia-resumido-2026-09-29">          ← uma por colaborador (id repetido!)
+//     <div dir="auto" data-testid="exclamation-circle|exclamation-triangle|check-circle">  ← ícone
+//     <div dir="auto">NOME </div>
+//     <div style="flex: 6 1 0%">
+//       6 × <div dir="auto">HH:MM ou vazio ou FÉRIAS</div>   ← Entrada 1 … Saída 3
+//       (ou 1 × <div dir="auto">Nenhum ponto registrado</div>)
+//     </div>
+//     <div dir="auto">-08:00</div>               ← saldo (vazio nas férias)
+//
+// Âncoras: o id "dia-resumido-AAAA-MM-DD" (também diz de QUE DIA é o HTML) e a
+// ordem dos <div dir="auto"> que não são o ícone — incluindo os vazios, então
+// "Entrada 1" é sempre a célula logo depois do nome, nunca "o primeiro horário
+// que aparecer".
 
 export type PontoStatus = 'batido' | 'sem_registro' | 'ferias' | 'desconhecido'
+export type PontoIcone = 'vermelho' | 'amarelo' | 'verde' | 'outro'
 
 export interface PontoRegistro {
   nome: string            // como veio do ponto, só com trim
-  icone: 'vermelho' | 'verde'
+  icone: PontoIcone
   status: PontoStatus
   entrada1: string | null // "HH:MM"
-  textos: string[]        // textos da linha, em ordem — vai pro relatório pra depurar
+  textos: string[]        // células da linha, em ordem — vai pro relatório pra depurar
 }
 
 export interface ResultadoParse {
+  data: string | null     // AAAA-MM-DD tirado do id das linhas
   registros: PontoRegistro[]
   avisos: string[]
 }
 
-const ICON_SELECTOR = '[data-testid="exclamation-circle"], [data-testid="check-circle"]'
+const LINHA_SELECTOR = '[id^="dia-resumido-"]'
 const HORA_RE = /^\d{1,2}:\d{2}$/
 const SEM_REGISTRO = 'NENHUM PONTO REGISTRADO'
 const FERIAS = 'FERIAS'
+
+const ICONES: Record<string, PontoIcone> = {
+  'exclamation-circle': 'vermelho',
+  'exclamation-triangle': 'amarelo',
+  'check-circle': 'verde',
+}
 
 export function parsePontoHtml(html: string): ResultadoParse {
   const $ = cheerio.load(html)
   const avisos: string[] = []
   const registros: PontoRegistro[] = []
 
-  const icones = $(ICON_SELECTOR).toArray()
-  if (icones.length === 0) {
+  const linhas = $(LINHA_SELECTOR).toArray()
+  if (linhas.length === 0) {
     return {
+      data: null,
       registros,
       avisos: [
-        'Nenhum ícone de status (data-testid "exclamation-circle"/"check-circle") encontrado no HTML — ' +
-        'o arquivo é mesmo a tela de acompanhamento de ponto, salva depois de carregar a lista?',
+        'Nenhuma linha "dia-resumido-…" encontrada no HTML — o arquivo é mesmo a tela de acompanhamento ' +
+        'de ponto, copiada (outerHTML) depois de a lista carregar?',
       ],
     }
   }
 
-  for (const icone of icones) {
-    const linha = subirAteLinha($, icone)
-    const textos = coletarTextos($, linha)
-    const iconeCor = $(icone).attr('data-testid') === 'check-circle' ? 'verde' : 'vermelho'
+  const datas = new Set<string>()
+  for (const linha of linhas) {
+    const m = /^dia-resumido-(\d{4}-\d{2}-\d{2})$/.exec($(linha).attr('id') ?? '')
+    if (m) datas.add(m[1]!)
 
-    const idxNome = textos.findIndex(t => /[A-Za-zÀ-ÿ]{2}/.test(t) && !ehMarcador(t))
-    if (idxNome === -1) {
-      avisos.push(`Linha sem nome reconhecível ignorada: ${JSON.stringify(textos).slice(0, 200)}`)
+    const iconeEl = $(linha).find('[data-testid]').first()
+    const icone = ICONES[iconeEl.attr('data-testid') ?? ''] ?? 'outro'
+
+    const celulas = $(linha).find('[dir="auto"]').toArray()
+      .filter(el => !$(el).is('[data-testid]'))
+      .map(el => texto($, el))
+
+    const nome = celulas[0] ?? ''
+    const resto = celulas.slice(1)
+    if (!/[A-Za-zÀ-ÿ]{2}/.test(nome)) {
+      avisos.push(`Linha do ponto sem nome reconhecível ignorada: ${JSON.stringify(celulas).slice(0, 200)}`)
       continue
     }
-    const nome = textos[idxNome]!.trim()
-    const resto = textos.slice(idxNome + 1)
-    const restoNorm = resto.map(normalize)
 
+    const restoNorm = resto.map(normalize)
     let status: PontoStatus
     let entrada1: string | null = null
 
     if (restoNorm.some(t => t.includes(SEM_REGISTRO))) {
       status = 'sem_registro'
-    } else if (restoNorm.some(t => t === FERIAS)) {
+    } else if (restoNorm.slice(0, 6).some(t => t === FERIAS)) {
       status = 'ferias'
+    } else if (resto.length >= 7 && HORA_RE.test(resto[0]!)) {
+      status = 'batido'
+      entrada1 = padHora(resto[0]!)
     } else {
-      // Primeiro horário SEM sinal depois do nome = Entrada 1. O saldo fica no
-      // fim da linha e costuma vir com sinal ("-07:57"); como ele é o último
-      // item, mesmo sem sinal só seria confundido se não houvesse nenhuma
-      // batida — caso em que o ponto mostra "Nenhum ponto registrado".
-      const primeiraHora = resto.find(t => HORA_RE.test(t.trim()))
-      if (primeiraHora) {
-        status = 'batido'
-        entrada1 = padHora(primeiraHora.trim())
-      } else {
-        status = 'desconhecido'
-      }
+      // Ex.: Entrada 1 vazia mas outra batida preenchida, ou estrutura nova.
+      status = 'desconhecido'
     }
 
-    registros.push({ nome, icone: iconeCor, status, entrada1, textos })
+    registros.push({ nome: nome.trim(), icone, status, entrada1, textos: celulas })
   }
+
+  if (datas.size > 1) avisos.push(`O HTML tem linhas de mais de um dia: ${[...datas].join(', ')}.`)
 
   const vistos = new Map<string, number>()
   for (const r of registros) {
@@ -95,40 +115,11 @@ export function parsePontoHtml(html: string): ResultadoParse {
     if (n > 1) avisos.push(`"${nome}" aparece ${n} vezes no ponto — vai para revisão.`)
   }
 
-  return { registros, avisos }
+  return { data: datas.size === 1 ? [...datas][0]! : null, registros, avisos }
 }
 
-function subirAteLinha($: cheerio.CheerioAPI, icone: Element): Element {
-  let atual: Element = icone
-  for (;;) {
-    const pai = atual.parent
-    if (!pai || pai.type !== 'tag') return atual
-    if ($(pai).find(ICON_SELECTOR).length > 1) return atual
-    atual = pai as Element
-  }
-}
-
-function coletarTextos($: cheerio.CheerioAPI, raiz: Element): string[] {
-  const out: string[] = []
-  const walk = (n: AnyNode) => {
-    if (n.type === 'text') {
-      const t = (n as any).data.replace(/\s+/g, ' ').trim()
-      if (t) out.push(t)
-      return
-    }
-    if (n.type === 'tag' || n.type === 'root') {
-      const tag = (n as Element).name
-      if (tag === 'script' || tag === 'style' || tag === 'svg') return
-      for (const c of (n as Element).children ?? []) walk(c)
-    }
-  }
-  walk(raiz)
-  return out
-}
-
-function ehMarcador(t: string): boolean {
-  const n = normalize(t)
-  return n === FERIAS || n.includes(SEM_REGISTRO) || HORA_RE.test(t.trim())
+function texto($: cheerio.CheerioAPI, el: Element): string {
+  return $(el).text().replace(/\s+/g, ' ').trim()
 }
 
 function padHora(h: string): string {

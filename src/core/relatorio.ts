@@ -9,7 +9,7 @@ export const ROTULO_SITUACAO: Record<Situacao, string> = {
   ambiguo: 'Match ambíguo — revisão',
   sem_linha_no_mes: 'Sem linha na aba do mês',
   nao_encontrado: 'Não encontrado na planilha',
-  ausente_no_ponto: 'Não aparece no ponto',
+  ausente_no_ponto: 'Fora do seu ponto (outros setores)',
 }
 
 const ORDEM: Situacao[] = [
@@ -26,9 +26,17 @@ function linhaItem(i: ItemPlano): string {
   return `  ${onde.padEnd(6)} ${adm.padEnd(9)} ${quem}${cod}${atual}\n           ${i.motivo}`
 }
 
-export function relatorioTexto(p: Plano, modo: 'simulacao' | 'escrita'): string {
+export type ModoRelatorio = 'simulacao' | 'escrita' | 'desfeita'
+
+const TITULO_MODO: Record<ModoRelatorio, string> = {
+  simulacao: 'SIMULAÇÃO (nada foi escrito)',
+  escrita: 'ESCRITA',
+  desfeita: 'ESCRITA DESFEITA',
+}
+
+export function relatorioTexto(p: Plano, modo: ModoRelatorio): string {
   const out: string[] = []
-  out.push(`Frequência — ${p.data} — aba "${p.aba}" — ${modo === 'simulacao' ? 'SIMULAÇÃO (nada foi escrito)' : 'ESCRITA'}`)
+  out.push(`Frequência — ${p.data} — aba "${p.aba}" — ${TITULO_MODO[modo]}`)
   out.push(`Gerado em ${p.geradoEm}`)
   out.push('')
   out.push('Resumo:')
@@ -45,12 +53,6 @@ export function relatorioTexto(p: Plano, modo: 'simulacao' | 'escrita'): string 
     out.push('')
     out.push(`── ${ROTULO_SITUACAO[s]} (${its.length}) ──`)
     for (const i of its) out.push(linhaItem(i))
-  }
-  const ausentes = p.itens.filter(i => i.situacao === 'ausente_no_ponto')
-  if (ausentes.length) {
-    out.push('')
-    out.push(`── ${ROTULO_SITUACAO.ausente_no_ponto} e célula vazia (${ausentes.length}) ──`)
-    out.push('  ' + ausentes.map(i => `${i.celula} ${i.nomePlanilha || 'ADM ' + i.adm}`).join('; '))
   }
   return out.join('\n')
 }

@@ -4,13 +4,14 @@ import readline from 'readline'
 import type { Plano } from './core/planner'
 import { relatorioTexto } from './core/relatorio'
 import { hojeISO } from './core/tempo'
-import { abrirGateway, criarAbasConfig, executarEscrita, salvarRelatorio, simular } from './service'
+import { abrirGateway, criarAbasConfig, desfazerEscrita, executarEscrita, salvarRelatorio, simular, type ResultadoEscrita } from './service'
 
 const AJUDA = `
 Uso:
   node dist/cli.js simular  --html ponto.html [--data AAAA-MM-DD] [--xlsx copia.xlsx]
                             [--entrada-padrao 08:00 --tolerancia 5] [--forcar]
   node dist/cli.js escrever --plano relatorios/<arquivo>.json
+  node dist/cli.js desfazer --escrita relatorios/<data>_escrita_<hora>.json
   node dist/cli.js criar-abas-config
 
   simular            Gera o relatório do que SERIA escrito (nada é gravado). Salva
@@ -18,6 +19,8 @@ Uso:
                      config.json; com --xlsx lê uma cópia local (só leitura).
   escrever           Aplica EXATAMENTE o plano .json de uma simulação revisada.
                      Relê cada célula antes e pula as que alguém preencheu.
+  desfazer           Apaga as células de uma escrita que ainda tiverem o código
+                     gravado pelo bot (o que alguém mudou depois fica).
   criar-abas-config  Cria na planilha as abas CONFIG_* que faltarem (só cabeçalho).
 
   --config caminho   config.json alternativo (padrão: ./config.json)
@@ -76,6 +79,20 @@ async function main() {
     console.log(`Escritas: ${r.escritas.length}. Puladas (preenchidas nesse meio tempo): ${r.puladas.length}`)
     for (const p of r.puladas) console.log(`  ${p.celula}: já tinha "${p.valorEncontrado}"`)
     salvarRelatorio(plano, 'escrita', r)
+    return
+  }
+
+  if (cmd === 'desfazer') {
+    if (typeof a['escrita'] !== 'string') throw new Error('Informe --escrita com o .json de uma escrita (relatorios/..._escrita_....json).')
+    const { plano, extra } = JSON.parse(fs.readFileSync(a['escrita'], 'utf-8')) as { plano: Plano; extra?: ResultadoEscrita }
+    if (!extra?.escritas) throw new Error('Esse arquivo não é o relatório de uma escrita.')
+    console.log(`Escrita de ${plano.data}, aba "${plano.aba}": ${extra.escritas.map(e => `${e.celula}="${e.codigo}"`).join(', ') || '(nenhuma célula)'}`)
+    if (!extra.escritas.length) return
+    if (!(await confirmar('Apagar as células que ainda tiverem o código gravado pelo bot? (s/N) '))) { console.log('Cancelado.'); return }
+    const r = await desfazerEscrita(abrirGateway(), plano.aba, extra.escritas)
+    console.log(`Apagadas: ${r.apagadas.join(', ') || '(nenhuma)'}`)
+    for (const m of r.mantidas) console.log(`  Mantida ${m.celula}: bot "${m.escritoPeloBot}" → agora "${m.valorEncontrado}"`)
+    salvarRelatorio(plano, 'desfeita', r)
     return
   }
 

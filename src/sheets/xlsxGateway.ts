@@ -45,7 +45,15 @@ export class XlsxGateway implements SheetGateway {
     throw new Error('Modo arquivo .xlsx é somente leitura — a escrita só acontece na planilha do Google.')
   }
 
+  async limpar(): Promise<void> {
+    throw new Error('Modo arquivo .xlsx é somente leitura.')
+  }
+
   async criarAba(): Promise<void> {
+    throw new Error('Modo arquivo .xlsx é somente leitura.')
+  }
+
+  async substituirTabela(): Promise<void> {
     throw new Error('Modo arquivo .xlsx é somente leitura.')
   }
 }

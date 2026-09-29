@@ -7,16 +7,23 @@ import { getLogsDir, getRelatoriosDir, logger } from './logger'
 import type { Plano } from './core/planner'
 import { hojeISO } from './core/tempo'
 import { GoogleSheetsGateway } from './sheets/googleSheets'
-import { abrirGateway, criarAbasConfig, executarEscrita, salvarRelatorio, simular } from './service'
+import { abrirGateway, criarAbasConfig, desfazerEscrita, executarEscrita, salvarRelatorio, simular, type ResultadoEscrita } from './service'
+import { carregarRegras, salvarRegras, type RegrasEditaveis } from './regras'
 
 let tray: Tray | null = null
 let configWin: BrowserWindow | null = null
 let appWin: BrowserWindow | null = null
+let regrasWin: BrowserWindow | null = null
 
 // Último plano simulado na janela principal. "Escrever" só grava ESTE plano —
 // o operador aprova exatamente o que viu no relatório, nunca uma nova leitura.
 let ultimoPlano: Plano | null = null
 const VALIDADE_PLANO_MS = 60 * 60 * 1000
+
+// Última escrita feita nesta janela — alvo do botão "Desfazer esta escrita".
+// Escritas mais antigas (ou de antes de reabrir o app) são desfeitas pelo
+// relatório .json salvo em relatorios/.
+let ultimaEscrita: { plano: Plano; escritas: ResultadoEscrita['escritas'] } | null = null
 
 const gotLock = app.requestSingleInstanceLock()
 if (!gotLock) {
@@ -50,6 +57,7 @@ function buildContextMenu(): Electron.Menu {
     { type: 'separator' },
     { label: 'Preencher frequência...', click: () => openAppWindow() },
     { type: 'separator' },
+    { label: 'Horários e regras', click: () => openRegrasWindow() },
     { label: 'Configurações', click: () => openConfigWindow() },
     { label: 'Ver relatórios', click: () => shell.openPath(ensureDir(getRelatoriosDir())) },
     { label: 'Ver logs', click: () => shell.openPath(ensureDir(getLogsDir())) },
@@ -87,7 +95,20 @@ function openAppWindow(): void {
     webPreferences: { preload: preloadPath(), contextIsolation: true, nodeIntegration: false },
   })
   appWin.loadFile(rendererPath('app.html'))
-  appWin.on('closed', () => { appWin = null; ultimoPlano = null })
+  appWin.on('closed', () => { appWin = null; ultimoPlano = null; ultimaEscrita = null })
+}
+
+function openRegrasWindow(): void {
+  if (regrasWin && !regrasWin.isDestroyed()) { regrasWin.focus(); return }
+  regrasWin = new BrowserWindow({
+    width: 1000,
+    height: 780,
+    title: 'Frequência Agent — Horários e regras',
+    autoHideMenuBar: true,
+    webPreferences: { preload: preloadPath(), contextIsolation: true, nodeIntegration: false },
+  })
+  regrasWin.loadFile(rendererPath('regras.html'))
+  regrasWin.on('closed', () => { regrasWin = null })
 }
 
 function registerIPC(): void {
@@ -171,6 +192,7 @@ function registerIPC(): void {
       const r = await executarEscrita(abrirGateway(), plano)
       salvarRelatorio(plano, 'escrita', r)
       ultimoPlano = null // um plano só é aplicado uma vez
+      ultimaEscrita = r.escritas.length ? { plano, escritas: r.escritas } : null
       return { ok: true, ...r }
     } catch (err: any) {
       logger.error('[escrever]', err.message)
@@ -178,7 +200,77 @@ function registerIPC(): void {
     }
   })
 
+  ipcMain.handle('desfazer', async () => {
+    const alvo = ultimaEscrita
+    if (!alvo) return { ok: false, message: 'Nenhuma escrita desta sessão para desfazer.' }
+    try {
+      const r = await desfazerEscrita(abrirGateway(), alvo.plano.aba, alvo.escritas)
+      salvarRelatorio(alvo.plano, 'desfeita', r)
+      ultimaEscrita = null
+      return { ok: true, data: alvo.plano.data, aba: alvo.plano.aba, ...r }
+    } catch (err: any) {
+      logger.error('[desfazer]', err.message)
+      return { ok: false, message: err.message ?? 'Erro desconhecido' }
+    }
+  })
+
+  // Desfaz uma escrita antiga a partir do .json que a própria escrita salvou.
+  ipcMain.handle('desfazer-de-relatorio', async () => {
+    const result = await dialog.showOpenDialog(appWin!, {
+      title: 'Escolha o relatório da escrita a desfazer',
+      defaultPath: ensureDir(getRelatoriosDir()),
+      filters: [{ name: 'Relatório de escrita', extensions: ['json'] }],
+      properties: ['openFile'],
+    })
+    if (result.canceled || !result.filePaths[0]) return { ok: false, cancelado: true }
+    try {
+      const arq = result.filePaths[0]
+      const { plano, extra } = JSON.parse(fs.readFileSync(arq, 'utf-8')) as { plano: Plano; extra?: ResultadoEscrita }
+      if (!/_escrita_/.test(path.basename(arq)) || !extra?.escritas) {
+        return { ok: false, message: 'Esse arquivo não é o relatório de uma escrita (nome "..._escrita_....json").' }
+      }
+      const lista = extra.escritas.map(e => `${e.celula}="${e.codigo}"`).join(', ')
+      const { response } = await dialog.showMessageBox(appWin!, {
+        type: 'warning',
+        buttons: ['Desfazer', 'Cancelar'],
+        defaultId: 1,
+        cancelId: 1,
+        title: 'Desfazer escrita',
+        message: `Desfazer a escrita de ${plano.data} (aba "${plano.aba}")?`,
+        detail: `${extra.escritas.length} célula(s): ${lista}\n\nSó serão apagadas as que ainda tiverem exatamente o código gravado pelo bot.`,
+      })
+      if (response !== 0) return { ok: false, cancelado: true }
+      const r = await desfazerEscrita(abrirGateway(), plano.aba, extra.escritas)
+      salvarRelatorio(plano, 'desfeita', r)
+      return { ok: true, data: plano.data, aba: plano.aba, ...r }
+    } catch (err: any) {
+      logger.error('[desfazer]', err.message)
+      return { ok: false, message: err.message ?? 'Erro desconhecido' }
+    }
+  })
+
   ipcMain.handle('abrir-relatorios', () => shell.openPath(ensureDir(getRelatoriosDir())))
+
+  ipcMain.handle('abrir-regras', () => openRegrasWindow())
+
+  ipcMain.handle('regras-carregar', async () => {
+    try {
+      return { ok: true, ...(await carregarRegras(abrirGateway())) }
+    } catch (err: any) {
+      return { ok: false, message: err.message ?? 'Erro desconhecido' }
+    }
+  })
+
+  // Valida antes de gravar: com qualquer erro, nada vai pra planilha.
+  ipcMain.handle('regras-salvar', async (_e, regras: RegrasEditaveis) => {
+    try {
+      const v = await salvarRegras(abrirGateway(), regras)
+      return { ok: v.erros.length === 0, ...v }
+    } catch (err: any) {
+      logger.error('[regras]', err.message)
+      return { ok: false, erros: [err.message ?? 'Erro desconhecido'], avisos: [] }
+    }
+  })
 }
 
 app.whenReady().then(() => {

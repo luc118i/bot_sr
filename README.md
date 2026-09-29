@@ -6,7 +6,18 @@ com `.` (pontual), `P` (atraso) e `FE` (férias).
 
 **Proteções:** simular é sempre o primeiro passo · célula já preenchida nunca é
 alterada · "sem ponto" nunca vira `F` sozinho · qualquer dúvida de nome vai para revisão ·
-antes de gravar, relê cada célula e pula as que alguém preencheu nesse meio tempo.
+antes de gravar, relê cada célula e pula as que alguém preencheu nesse meio tempo ·
+toda escrita pode ser **desfeita** (apaga só as células que ainda têm o código gravado pelo
+bot — o que alguém mudou depois fica).
+
+## Testando na planilha original
+
+1. Google Sheets → Arquivo → Histórico de versões → **Nomear versão atual** ("Antes do bot").
+2. **Horários e regras** → salvar: só cria/grava as abas `CONFIG_*`.
+3. Simule um dia **já lançado à mão** (filtro de data na tela do ponto): nada a escrever, a
+   prévia só mostra o que confere e o que diverge. Ajuste horários até zerar as divergências.
+4. Primeira escrita num dia novo, depois do horário de corte. Se algo sair errado: botão
+   **Desfazer esta escrita** (ou **Desfazer escrita anterior...** escolhendo o relatório).
 
 ## Uso
 
@@ -22,6 +33,7 @@ CLI (mesmo núcleo):
 node dist/cli.js simular --html ponto.html --data 2026-09-28
 node dist/cli.js simular --html ponto.html --data 2026-09-28 --xlsx copia.xlsx --entrada-padrao 08:00 --tolerancia 5
 node dist/cli.js escrever --plano relatorios/<arquivo>.json
+node dist/cli.js desfazer --escrita relatorios/<data>_escrita_<hora>.json
 node dist/cli.js criar-abas-config
 ```
 
@@ -31,19 +43,36 @@ node dist/cli.js criar-abas-config
 
 1. **Service Account** (Google Cloud) com a API do Sheets ativada. Compartilhe a planilha
    com o e-mail dela como **Editor**.
-2. Nas Configurações do app: JSON da service account + link da planilha → "Testar conexão".
-3. "Criar abas de configuração" e preencher:
+2. Nas **Configurações** do app: JSON da service account + link da planilha → "Testar conexão".
+3. Em **Horários e regras** (bandeja ou botão na tela principal): entrada padrão, tolerância,
+   horário de corte, horários individuais (com vigência), exceções de um dia, apelidos e feriados.
+   A tela valida tudo antes de gravar e salva nas abas `CONFIG_*` da planilha (criadas se faltarem),
+   então vale para qualquer máquina/responsável que rodar o bot.
 
-| Aba | Colunas | Observação |
-|---|---|---|
-| `CONFIG_GERAL` | `tolerancia_min`, `entrada_padrao`, `horario_corte` | 1 linha de dados. Antes de `horario_corte` o dia de hoje não é classificado |
-| `CONFIG_HORARIOS` | `adm`, `entrada`, `saida`, `tolerancia_min`, `vigencia_inicio`, `vigencia_fim`, `obs` | só quem foge do padrão |
-| `CONFIG_EXCECOES` | `data`, `adm`, `entrada_prevista`, `codigo`, `obs` | vale só para aquela data |
-| `CONFIG_APELIDOS` | `nome_no_ponto`, `adm`, `obs` | nome truncado/diferente |
-| `CONFIG_FERIADOS` | `data`, `descricao` | bot não roda nesses dias |
+| Aba | Colunas |
+|---|---|
+| `CONFIG_GERAL` | `tolerancia_min`, `entrada_padrao`, `horario_corte` |
+| `CONFIG_HORARIOS` | `adm`, `entrada`, `saida`, `tolerancia_min`, `vigencia_inicio`, `vigencia_fim`, `obs` |
+| `CONFIG_EXCECOES` | `data`, `adm`, `entrada_prevista`, `codigo`, `obs` |
+| `CONFIG_APELIDOS` | `nome_no_ponto`, `adm`, `obs` |
+| `CONFIG_FERIADOS` | `data`, `descricao` |
 
 Horário previsto: exceção do dia → horário individual vigente → padrão.
 Tolerância inclusiva: entrada ≤ previsto + tolerância → `.`; depois → `P`.
+
+## Escopo por responsável
+
+A tela de ponto só lista os colaboradores sob responsabilidade de quem fez login; a aba do mês
+tem todos os setores. Quem não aparece no ponto é mostrado como "fora do seu ponto (outros
+setores)" — recolhido, não é pendência — e nunca é tocado (exceto por código forçado em exceção).
+
+## HTML do ponto
+
+Âncora: cada colaborador é um `<div id="dia-resumido-AAAA-MM-DD">`; a data do id precisa bater
+com o dia escolhido. Ícones: `exclamation-circle` (vermelho), `exclamation-triangle` (amarelo),
+`check-circle` (verde) — não entram na decisão. Entrada 1 = primeira célula depois do nome.
+Para obter o HTML: F12 → Elements → botão direito em `<html>` → Copy outerHTML, depois que a
+lista carregar.
 
 ## Layout da planilha
 
@@ -63,6 +92,7 @@ src/core/        regras puras (sem Electron/Google) + testes
   planner        decisão por colaborador + plano de escrita
 src/sheets/      GoogleSheetsGateway (real) e XlsxGateway (cópia, só leitura)
 src/service.ts   simular / executarEscrita / criarAbasConfig
+src/regras.ts    tela "Horários e regras" ↔ abas CONFIG_* (carregar, validar, salvar)
 src/main.ts      bandeja + janelas; src/cli.ts linha de comando
 ```
 

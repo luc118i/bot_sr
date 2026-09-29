@@ -4,12 +4,11 @@ import { getConfig } from './config'
 import { getRelatoriosDir, logger } from './logger'
 import { ABAS_CONFIG, CABECALHOS_CONFIG, parseConfigPlanilha, type OverridesGeral } from './core/configPlanilha'
 import { detectarLayout, nomeAbaDoMes } from './core/layoutMes'
-import type { BaseColaborador } from './core/matcher'
-import { normalize, normalizeAdm } from './core/normalize'
 import { montarPlano, type Plano } from './core/planner'
 import { parsePontoHtml } from './core/pontoParser'
-import { relatorioTexto } from './core/relatorio'
+import { relatorioTexto, type ModoRelatorio } from './core/relatorio'
 import { parseDataISO } from './core/tempo'
+import { lerColaboradores } from './regras'
 import type { SheetGateway } from './sheets/gateway'
 import { GoogleSheetsGateway } from './sheets/googleSheets'
 import { XlsxGateway } from './sheets/xlsxGateway'
@@ -45,7 +44,7 @@ export async function simular(gw: SheetGateway, op: OpcoesSimulacao): Promise<Pl
     Object.values(ABAS_CONFIG).map(a => gw.lerGrid(a)),
   )
   if (!geral && !(op.overrides?.entradaPadrao && op.overrides.toleranciaMin !== undefined)) {
-    throw new Error(`Aba ${ABAS_CONFIG.geral} não existe — use "Criar abas de configuração" e preencha tolerância e entrada padrão.`)
+    throw new Error(`Aba ${ABAS_CONFIG.geral} não existe — abra "Horários e regras" e preencha entrada padrão, tolerância e horário de corte.`)
   }
   const cfg = parseConfigPlanilha(
     { geral: geral ?? null, horarios: horarios ?? null, excecoes: excecoes ?? null, apelidos: apelidos ?? null, feriados: feriados ?? null },
@@ -55,32 +54,26 @@ export async function simular(gw: SheetGateway, op: OpcoesSimulacao): Promise<Pl
   const aba = nomeAbaDoMes(abas, d.mes)
   const grid = (await gw.lerGrid(aba))!
   const layout = detectarLayout(aba, grid, d.ano, d.mes)
-  const base = await lerBase(gw, abas)
+  // BASE DE DADOS só diferencia "tem na base mas sem linha no mês" de "não existe".
+  const base = await lerColaboradores(gw, abas)
 
-  const { registros, avisos: avisosParse } = parsePontoHtml(op.html)
+  const { data: dataPonto, registros, avisos: avisosParse } = parsePontoHtml(op.html)
   if (registros.length === 0) {
     throw new Error(`Nenhum colaborador lido do HTML do ponto. ${avisosParse.join(' ')}`)
+  }
+  // O HTML diz de que dia é — rodar o ponto de um dia na coluna de outro seria
+  // um erro silencioso e difícil de perceber na planilha.
+  if (!dataPonto) {
+    throw new Error(`Não deu pra saber de que dia é o HTML do ponto. ${avisosParse.join(' ')}`)
+  }
+  if (dataPonto !== op.data) {
+    throw new Error(`O HTML do ponto é do dia ${dataPonto}, mas o dia escolhido é ${op.data}.`)
   }
 
   const plano = montarPlano({ data: op.data, registros, layout, grid, cfg, base, now: op.now, forcar: op.forcar })
   plano.avisos.unshift(...avisosParse)
   logger.info(`[simular] ${op.data}: ${registros.length} do ponto, resumo ${JSON.stringify(plano.resumo)}`)
   return plano
-}
-
-// Nome → ADM da BASE DE DADOS, só pra diferenciar "tem na base mas não tem
-// linha no mês" de "não existe". Opcional: se a aba não estiver no formato
-// esperado, segue sem ela.
-async function lerBase(gw: SheetGateway, abas: string[]): Promise<BaseColaborador[]> {
-  const aba = abas.find(a => normalize(a) === 'BASE DE DADOS')
-  if (!aba) return []
-  const grid = (await gw.lerGrid(aba)) ?? []
-  const hdr = (grid[0] ?? []).map(normalize)
-  const cAdm = hdr.indexOf('ADM'), cNome = hdr.indexOf('COLABORADOR')
-  if (cAdm === -1 || cNome === -1) return []
-  return grid.slice(1)
-    .map(r => ({ adm: normalizeAdm(r[cAdm]), nome: String(r[cNome] ?? '') }))
-    .filter(b => b.adm && b.nome)
 }
 
 export interface ResultadoEscrita {
@@ -105,6 +98,30 @@ export async function executarEscrita(gw: SheetGateway, plano: Plano): Promise<R
   return { escritas, puladas }
 }
 
+export interface ResultadoDesfazer {
+  apagadas: string[]
+  mantidas: { celula: string; valorEncontrado: string; escritoPeloBot: string }[]
+}
+
+// Desfaz UMA escrita do bot: apaga só as células que ainda contêm exatamente o
+// código que o bot gravou. Se alguém mudou a célula depois (ex.: trocou "P"
+// por "AT"), ela fica como está — o desfazer nunca apaga trabalho de outra
+// pessoa. Por isso é mais fino que o Histórico de versões do Google, que
+// voltaria a planilha inteira.
+export async function desfazerEscrita(gw: SheetGateway, aba: string, escritas: ResultadoEscrita['escritas']): Promise<ResultadoDesfazer> {
+  const atuais = await gw.lerCelulas(aba, escritas.map(e => e.celula))
+  const apagadas: string[] = []
+  const mantidas: ResultadoDesfazer['mantidas'] = []
+  escritas.forEach((e, i) => {
+    const atual = atuais[i] ?? ''
+    if (atual.trim().toUpperCase() === e.codigo.toUpperCase()) apagadas.push(e.celula)
+    else mantidas.push({ celula: e.celula, valorEncontrado: atual, escritoPeloBot: e.codigo })
+  })
+  await gw.limpar(aba, apagadas)
+  logger.info(`[desfazer] aba ${aba}: ${apagadas.length} apagadas, ${mantidas.length} mantidas (alteradas depois da escrita)`)
+  return { apagadas, mantidas }
+}
+
 export async function criarAbasConfig(gw: SheetGateway): Promise<string[]> {
   const abas = await gw.listarAbas()
   const criadas: string[] = []
@@ -117,12 +134,31 @@ export async function criarAbasConfig(gw: SheetGateway): Promise<string[]> {
   return criadas
 }
 
-export function salvarRelatorio(plano: Plano, modo: 'simulacao' | 'escrita', extra?: unknown): string {
+export function salvarRelatorio(plano: Plano, modo: ModoRelatorio, extra?: ResultadoEscrita | ResultadoDesfazer): string {
   const dir = getRelatoriosDir()
   fs.mkdirSync(dir, { recursive: true })
   const ts = plano.geradoEm.replace(/[:.]/g, '-')
   const base = path.join(dir, `${plano.data}_${modo}_${ts}`)
-  fs.writeFileSync(`${base}.txt`, relatorioTexto(plano, modo), 'utf-8')
+  fs.writeFileSync(`${base}.txt`, relatorioTexto(plano, modo) + resumoExtra(extra), 'utf-8')
   fs.writeFileSync(`${base}.json`, JSON.stringify({ plano, extra }, null, 2), 'utf-8')
   return `${base}.txt`
+}
+
+// Na escrita/desfazer, o que interessa é a lista EXATA de células mexidas.
+function resumoExtra(extra?: ResultadoEscrita | ResultadoDesfazer): string {
+  if (!extra) return ''
+  const out = ['', '']
+  if ('escritas' in extra) {
+    out.push(`── Gravadas (${extra.escritas.length}) ──`, '  ' + (extra.escritas.map(e => `${e.celula}="${e.codigo}"`).join(', ') || '(nenhuma)'))
+    if (extra.puladas.length) {
+      out.push(`── Puladas, já preenchidas (${extra.puladas.length}) ──`, '  ' + extra.puladas.map(p => `${p.celula}="${p.valorEncontrado}"`).join(', '))
+    }
+  } else {
+    out.push(`── Apagadas (${extra.apagadas.length}) ──`, '  ' + (extra.apagadas.join(', ') || '(nenhuma)'))
+    if (extra.mantidas.length) {
+      out.push(`── Mantidas, alteradas depois da escrita (${extra.mantidas.length}) ──`,
+        '  ' + extra.mantidas.map(m => `${m.celula}: bot "${m.escritoPeloBot}" → agora "${m.valorEncontrado}"`).join(', '))
+    }
+  }
+  return out.join('\n')
 }
