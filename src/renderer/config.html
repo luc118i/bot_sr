@@ -10,7 +10,7 @@
     .header { background: #1e293b; color: white; padding: 16px 24px; }
     .header h1 { font-size: 15px; font-weight: 600; }
     .header p { font-size: 11px; color: #94a3b8; margin-top: 2px; }
-    .content { padding: 20px 24px; }
+    .content { padding: 20px 24px 80px; }
     .section { margin-bottom: 20px; }
     .section-title { font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.05em; color: #64748b; margin-bottom: 10px; padding-bottom: 6px; border-bottom: 1px solid #e2e8f0; }
     .field { margin-bottom: 12px; }
@@ -27,29 +27,95 @@
     .msg.ok { display: block; background: #dcfce7; color: #166534; }
     .msg.err { display: block; background: #fee2e2; color: #991b1b; }
     code { background: #e2e8f0; padding: 1px 4px; border-radius: 3px; font-size: 11px; }
+    .tabs { display: flex; gap: 4px; padding: 10px 24px 0; background: white; border-bottom: 1px solid #e2e8f0; }
+    .tab { border: none; border-bottom: 2px solid transparent; border-radius: 0; background: none; padding: 8px 12px; color: #64748b; }
+    .tab.ativa { color: #1e293b; border-bottom-color: #1e293b; font-weight: 600; }
+    select { width: 100%; padding: 7px 10px; border: 1px solid #d1d5db; border-radius: 6px; font-size: 12px; background: white; }
+    .radios { display: flex; gap: 18px; margin-bottom: 12px; font-size: 12px; }
+    .radios label { display: flex; gap: 5px; align-items: center; cursor: pointer; }
   </style>
 </head>
 <body>
   <div class="header">
     <h1>Frequência Agent — Configuração</h1>
-    <p>Credencial do Google e qual planilha preencher. As regras (horários, tolerância, exceções) ficam nas abas CONFIG_* da planilha.</p>
+    <p>Conexão com a planilha e login do ponto. As regras (horários, tolerância, exceções) ficam em "Horários e regras".</p>
   </div>
 
-  <div class="content">
+  <div class="tabs">
+    <button class="tab ativa" data-tab="planilha">Planilha</button>
+    <button class="tab" data-tab="ponto">Ponto (Secullum)</button>
+  </div>
+
+  <div class="content" id="tab-ponto" style="display:none">
     <div class="section">
-      <div class="section-title">Google</div>
+      <div class="section-title">Login da Central do Funcionário</div>
+      <p class="field-hint" style="margin:0 0 12px">Os mesmos dados da tela de login do ponto. O bot usa esse login para ler o acompanhamento de ponto da equipe — nada é alterado no ponto. A senha fica criptografada nesta máquina.</p>
       <div class="field">
-        <label>Service Account (JSON)</label>
+        <label>Banco</label>
+        <input type="text" id="pontoBanco" inputmode="numeric" placeholder="número do banco (o mesmo do login)" />
+      </div>
+      <div class="field">
+        <label>Entrar com</label>
+        <select id="pontoTipo">
+          <option value="folha">Nº Folha</option>
+          <option value="identificador">Nº Identificador</option>
+        </select>
+      </div>
+      <div class="field">
+        <label>Número</label>
+        <input type="text" id="pontoNumero" autocomplete="off" />
+      </div>
+      <div class="field">
+        <label>Senha</label>
         <div class="file-row">
-          <div class="file-name" id="saName">Nenhum arquivo selecionado</div>
-          <button id="btnPick">Selecionar...</button>
+          <input type="password" id="pontoSenha" autocomplete="off" />
+          <button id="btnVerSenha" style="white-space:nowrap">Mostrar</button>
         </div>
-        <div class="field-hint" id="saHint">A planilha precisa estar compartilhada como <b>Editor</b> com o e-mail da Service Account.</div>
       </div>
-      <div class="field">
-        <label>Planilha de frequência (link ou ID)</label>
-        <input type="text" id="sheetId" placeholder="https://docs.google.com/spreadsheets/d/..." />
+      <button id="btnTestarPonto">Testar login</button>
+      <div class="msg" id="msgPonto"></div>
+    </div>
+  </div>
+
+  <div class="content" id="tab-planilha">
+    <div class="section">
+      <div class="section-title">Conexão com a planilha</div>
+      <div class="radios">
+        <label><input type="radio" name="conexao" value="apps_script" checked /> Apps Script (link da planilha)</label>
+        <label><input type="radio" name="conexao" value="service_account" /> Service Account (JSON)</label>
       </div>
+
+      <div id="boxAppsScript">
+        <div class="field">
+          <label>Link do App da Web</label>
+          <input type="text" id="asUrl" placeholder="https://script.google.com/macros/s/.../exec" />
+          <div class="field-hint">Apps Script → Implantar → Nova implantação → App da Web (executar como: Eu · acesso: Qualquer pessoa). Passo a passo no README.</div>
+        </div>
+        <div class="field">
+          <label>Token</label>
+          <div class="file-row">
+            <input type="text" id="asToken" placeholder="gere um e cole na propriedade TOKEN do script" />
+            <button id="btnToken" style="white-space:nowrap">Gerar token</button>
+          </div>
+          <div class="field-hint">Cole o mesmo valor em Apps Script → Configurações do projeto → Propriedades do script → <code>TOKEN</code>.</div>
+        </div>
+      </div>
+
+      <div id="boxServiceAccount" style="display:none">
+        <div class="field">
+          <label>Service Account (JSON)</label>
+          <div class="file-row">
+            <div class="file-name" id="saName">Nenhum arquivo selecionado</div>
+            <button id="btnPick">Selecionar...</button>
+          </div>
+          <div class="field-hint" id="saHint">A planilha precisa estar compartilhada como <b>Editor</b> com o e-mail da Service Account.</div>
+        </div>
+        <div class="field">
+          <label>Planilha de frequência (link ou ID)</label>
+          <input type="text" id="sheetId" placeholder="https://docs.google.com/spreadsheets/d/..." />
+        </div>
+      </div>
+
       <button id="btnTest">Testar conexão</button>
       <div class="msg" id="msg"></div>
     </div>
@@ -72,14 +138,73 @@
 
   <script>
     let sa = ''
+    let cfgSalva = {}
     const $ = id => document.getElementById(id)
     const show = (el, ok, text) => { el.className = 'msg ' + (ok ? 'ok' : 'err'); el.textContent = text }
-    const current = () => ({ google_service_account_json_b64: sa, spreadsheet_id: $('sheetId').value.trim() })
+    const conexao = () => document.querySelector('input[name="conexao"]:checked').value
+    // Mantém campos que esta tela não edita (ex.: credenciais do ponto).
+    const current = () => ({
+      ...cfgSalva,
+      conexao: conexao(),
+      apps_script_url: $('asUrl').value.trim(),
+      apps_script_token: $('asToken').value.trim(),
+      google_service_account_json_b64: sa,
+      spreadsheet_id: $('sheetId').value.trim(),
+      ponto_banco: $('pontoBanco').value.trim(),
+      ponto_tipo: $('pontoTipo').value,
+      ponto_numero: $('pontoNumero').value.trim(),
+      ponto_senha: $('pontoSenha').value,
+    })
+
+    document.querySelectorAll('.tab').forEach(t => {
+      t.onclick = () => {
+        document.querySelectorAll('.tab').forEach(x => x.classList.toggle('ativa', x === t))
+        $('tab-planilha').style.display = t.dataset.tab === 'planilha' ? '' : 'none'
+        $('tab-ponto').style.display = t.dataset.tab === 'ponto' ? '' : 'none'
+      }
+    })
+
+    $('btnVerSenha').onclick = () => {
+      const i = $('pontoSenha')
+      i.type = i.type === 'password' ? 'text' : 'password'
+      $('btnVerSenha').textContent = i.type === 'password' ? 'Mostrar' : 'Ocultar'
+    }
+
+    $('btnTestarPonto').onclick = async () => {
+      $('btnTestarPonto').disabled = true
+      show($('msgPonto'), true, 'Testando...')
+      const r = await window.agent.testarPonto(current())
+      show($('msgPonto'), r.ok, r.message)
+      $('btnTestarPonto').disabled = false
+    }
+
+    function mostrarConexao() {
+      $('boxAppsScript').style.display = conexao() === 'apps_script' ? '' : 'none'
+      $('boxServiceAccount').style.display = conexao() === 'service_account' ? '' : 'none'
+    }
+    document.querySelectorAll('input[name="conexao"]').forEach(r => { r.onchange = mostrarConexao })
+
+    $('btnToken').onclick = () => {
+      if ($('asToken').value && !confirm('Trocar o token? O script também precisa receber o novo valor.')) return
+      const b = new Uint8Array(24)
+      crypto.getRandomValues(b)
+      $('asToken').value = [...b].map(x => x.toString(16).padStart(2, '0')).join('')
+    }
 
     window.agent.getConfig().then(cfg => {
       if (!cfg) return
+      cfgSalva = cfg
       sa = cfg.google_service_account_json_b64 || ''
       $('sheetId').value = cfg.spreadsheet_id || ''
+      $('asUrl').value = cfg.apps_script_url || ''
+      $('asToken').value = cfg.apps_script_token || ''
+      $('pontoBanco').value = cfg.ponto_banco || ''
+      $('pontoTipo').value = cfg.ponto_tipo || 'folha'
+      $('pontoNumero').value = cfg.ponto_numero || ''
+      $('pontoSenha').value = cfg.ponto_senha || ''
+      const tipo = cfg.conexao || (cfg.apps_script_url || !sa ? 'apps_script' : 'service_account')
+      document.querySelector(`input[name="conexao"][value="${tipo}"]`).checked = true
+      mostrarConexao()
       if (sa) {
         try { $('saName').textContent = 'Configurada — ' + JSON.parse(atob(sa)).client_email } catch { $('saName').textContent = 'Configurada' }
       }
@@ -101,7 +226,8 @@
 
     $('btnSave').onclick = async () => {
       await window.agent.saveConfig(current())
-      show($('msg'), true, 'Configuração salva.')
+      const naAbaPonto = $('tab-ponto').style.display !== 'none'
+      show($(naAbaPonto ? 'msgPonto' : 'msg'), true, 'Configuração salva.')
     }
 
     $('btnAbas').onclick = async () => {

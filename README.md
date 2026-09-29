@@ -1,31 +1,41 @@
 # frequencia-agent
 
-Agente local (Electron, bandeja do Windows — mesmo molde do `rizer-agent`) que lê a
-tela de acompanhamento de ponto e preenche a planilha de frequência no Google Sheets
-com `.` (pontual), `P` (atraso) e `FE` (férias).
+Agente local (Electron, bandeja do Windows — mesmo molde do `rizer-agent`) que lê o
+acompanhamento de ponto (Central do Funcionário / Secullum) e preenche a planilha de
+frequência no Google Sheets com `.` (pontual), `P` (atraso) e `FE` (férias).
 
-**Proteções:** simular é sempre o primeiro passo · célula já preenchida nunca é
-alterada · "sem ponto" nunca vira `F` sozinho · qualquer dúvida de nome vai para revisão ·
-antes de gravar, relê cada célula e pula as que alguém preencheu nesse meio tempo ·
-toda escrita pode ser **desfeita** (apaga só as células que ainda têm o código gravado pelo
-bot — o que alguém mudou depois fica).
+**Um clique:** "Preencher frequência" busca no ponto os **últimos 7 dias**, grava o que for
+seguro e mostra um resumo por dia (preenchido, precisa de revisão, diverge do que já estava
+lançado) com botão **Desfazer**. "Só conferir" mostra o mesmo resumo sem gravar.
+
+**Proteções:** célula já preenchida nunca é alterada · "sem ponto" nunca vira `F` sozinho ·
+qualquer dúvida de nome vai para revisão · antes de gravar, relê cada célula e pula as que
+alguém preencheu nesse meio tempo · domingos e feriados (colunas ocultas) nunca são
+preenchidos · toda escrita pode ser **desfeita** (apaga só as células que ainda têm o código
+gravado pelo bot — o que alguém mudou depois fica).
 
 ## Testando na planilha original
 
 1. Google Sheets → Arquivo → Histórico de versões → **Nomear versão atual** ("Antes do bot").
 2. **Horários e regras** → salvar: só cria/grava as abas `CONFIG_*`.
-3. Simule dias **já lançados à mão** (filtro de data na tela do ponto): nada a escrever, a
-   prévia só mostra o que confere e o que diverge. Ajuste horários até zerar as divergências.
-4. Primeira escrita num dia novo, depois do horário de corte. Se algo sair errado: botão
-   **Desfazer esta escrita** (ou **Desfazer escrita anterior...** escolhendo os relatórios).
+3. **Só conferir**: os dias já lançados à mão aparecem como "confere" ou "diverge". Ajuste
+   horários individuais até zerar as divergências.
+4. **Preencher frequência**. Se algo sair errado: **Desfazer esta escrita** (ou **Desfazer
+   escrita anterior...** escolhendo os relatórios).
 
-## Conferindo a semana
+## Ponto (Secullum)
 
-Um HTML por dia (a data é lida de dentro do HTML — não precisa informar). Selecione todos de
-uma vez: a prévia mostra um bloco por dia, pula domingos e feriados, cruza a virada do mês
-(cada dia vai para a sua aba) e um único **Escrever** grava tudo. Um dia com problema (HTML
-errado, dia repetido, mês com cabeçalho quebrado) aparece em vermelho e não impede os outros.
-Se a gravação falhar no meio, os dias já gravados continuam disponíveis para o **Desfazer**.
+O bot não abre navegador: chama a mesma API que a tela "Acompanhamento de Ponto" usa
+(`https://pontowebapp.secullum.com.br/<banco>/Batidas/<AAAA-MM-DD>`), autenticando com o
+login da Central do Funcionário em **Configurações → Ponto (Secullum)** (banco, Nº Folha ou
+Nº Identificador, número e senha — "Testar login" confere). Só leitura: nada é alterado no
+ponto. A senha e o token do Apps Script ficam **criptografados** no `config.json` (cofre do
+Windows, amarrado ao usuário da máquina). A resposta traz, por colaborador, as batidas,
+o saldo e se o dia é feriado — se o ponto disser feriado e a coluna estiver visível, o
+resumo avisa.
+
+Alternativa (Avançado na tela principal / CLI): conferir a partir do HTML da tela copiado
+pelo F12 — um arquivo por dia, a data vem de dentro do HTML.
 
 ## Domingos e feriados
 
@@ -39,7 +49,7 @@ trabalhado cuja coluna foi esquecida visível só gera "sem ponto → revisão" 
 
 ```
 npm install
-npm run dev          # app na bandeja → "Preencher frequência..."
+npm run dev          # app na bandeja → "Preencher frequência"
 npm test             # testes do núcleo
 ```
 
@@ -57,9 +67,9 @@ node dist/cli.js criar-abas-config
 
 ## Configuração
 
-1. **Service Account** (Google Cloud) com a API do Sheets ativada. Compartilhe a planilha
-   com o e-mail dela como **Editor**.
-2. Nas **Configurações** do app: JSON da service account + link da planilha → "Testar conexão".
+1. Conecte o bot à planilha — **Apps Script** (recomendado, não precisa de Google Cloud) ou
+   **Service Account** (JSON). Ver "Conectar via Apps Script" abaixo.
+2. Nas **Configurações** do app: escolha a conexão, preencha → "Testar conexão".
 3. Em **Horários e regras** (bandeja ou botão na tela principal): entrada padrão, tolerância,
    horário de corte, horários individuais (com vigência), exceções de um dia e apelidos.
    A tela valida tudo antes de gravar e salva nas abas `CONFIG_*` da planilha (criadas se faltarem),
@@ -74,6 +84,28 @@ node dist/cli.js criar-abas-config
 
 Horário previsto: exceção do dia → horário individual vigente → padrão.
 Tolerância inclusiva: entrada ≤ previsto + tolerância → `.`; depois → `P`.
+
+## Conectar via Apps Script
+
+O bot fala com a planilha por um script publicado dentro dela, que roda com a permissão de
+quem publicou. Quem faz os passos precisa ser dono ou editor da planilha.
+
+1. Na planilha: **Extensões → Apps Script**. Apague o conteúdo de `Código.gs` e cole
+   [`apps-script/Codigo.gs`](apps-script/Codigo.gs). Salve.
+   *(Se o projeto foi criado fora da planilha, em script.google.com, adicione também a
+   propriedade `PLANILHA_ID` no passo 3.)*
+2. No bot: **Configurações → Conexão: Apps Script → Gerar token**. Copie o token.
+3. No Apps Script: **Configurações do projeto** (engrenagem) → **Propriedades do script** →
+   adicionar `TOKEN` = o token copiado.
+4. **Implantar → Nova implantação** → tipo **App da Web** → Executar como: **Eu** →
+   Quem pode acessar: **Qualquer pessoa** → Implantar. Autorize o acesso quando o Google pedir.
+5. Copie o **URL do app da Web** (termina em `/exec`) para o bot → **Testar conexão** → Salvar.
+
+"Qualquer pessoa" é necessário porque o bot não faz login no Google; quem protege é o token —
+sem ele o script não lê nem grava nada. Link e token ficam só no `config.json` da máquina.
+Ao mudar o código do script, use **Implantar → Gerenciar implantações → editar → Nova versão**
+para manter o mesmo link. No histórico de versões da planilha, as alterações do bot aparecem
+no nome de quem publicou.
 
 ## Escopo por responsável
 
@@ -100,25 +132,28 @@ Na cópia de 2026 isso reprova **Março** (falta o 15), **Maio** (falta o 3) e *
 
 ```
 src/core/        regras puras (sem Electron/Google) + testes
-  pontoParser    HTML do ponto → registros (âncora: data-testid dos ícones)
-  layoutMes      acha/valida colunas da aba do mês
+  pontoApi       resposta da API do ponto → registros
+  pontoParser    HTML do ponto → registros (modo avançado)
+  layoutMes      acha/valida colunas da aba do mês; colunas ocultas = dias não úteis
   configPlanilha abas CONFIG_* e resolução do horário previsto
   matcher        nome do ponto → linha (apelidos, sugestão p/ nome truncado)
   planner        decisão por colaborador + plano de escrita
-src/sheets/      GoogleSheetsGateway (real) e XlsxGateway (cópia, só leitura)
-src/service.ts   simular / executarEscrita / criarAbasConfig
+src/ponto/       SecullumClient (API da Central do Funcionário)
+src/sheets/      AppsScriptGateway, GoogleSheetsGateway (Service Account), XlsxGateway (cópia, só leitura)
+apps-script/     Codigo.gs — o script que vai dentro da planilha
+src/service.ts   preencherAutomatico (um clique) / simularLote / escrita / desfazer
 src/regras.ts    tela "Horários e regras" ↔ abas CONFIG_* (carregar, validar, salvar)
 src/main.ts      bandeja + janelas; src/cli.ts linha de comando
 ```
 
 ## Fora do MVP
 
-Busca automática do HTML (login via Playwright ou API JSON do ponto), Saídas/Entradas 2–3,
-carga retroativa, correção das fórmulas de totais.
+Saídas/Entradas 2–3, traduzir outras justificativas do ponto (atestado, folga...) em código,
+correção das fórmulas de totais.
 
 ## Dados sensíveis
 
-Nunca versionar `config.json` (contém a service account), cópias `.xlsx` da planilha
+Nunca versionar `config.json` (credenciais), cópias `.xlsx` da planilha
 (BASE DE DADOS tem CPF e telefones) nem HTML salvo do ponto — o `.gitignore` já bloqueia.
 Testes usam só o fixture sintético em `test/fixtures/`.
 

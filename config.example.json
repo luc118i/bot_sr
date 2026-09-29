@@ -1,4 +1,7 @@
 {
-  "google_service_account_json_b64": "eyJjbGllbnRfZW1haWwiOiIuLi4ifQ==",
-  "spreadsheet_id": "https://docs.google.com/spreadsheets/d/ID_DA_PLANILHA/edit"
+  "conexao": "apps_script",
+  "apps_script_url": "https://script.google.com/macros/s/ID_DA_IMPLANTACAO/exec",
+  "apps_script_token": "token-gerado-nas-configuracoes",
+  "google_service_account_json_b64": "",
+  "spreadsheet_id": ""
 }

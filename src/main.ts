@@ -1,13 +1,15 @@
 import './envSetup'
-import { app, Tray, Menu, nativeImage, dialog, shell, BrowserWindow, ipcMain } from 'electron'
+import { app, Tray, Menu, nativeImage, dialog, shell, BrowserWindow, ipcMain, safeStorage } from 'electron'
 import path from 'path'
 import fs from 'fs'
-import { getConfigPath, saveConfig, type AgentConfig } from './config'
+import { configurarCofre, credenciaisPonto, getConfig, getConfigPath, saveConfig, type AgentConfig } from './config'
+import { hojeISO } from './core/tempo'
+import { SecullumClient } from './ponto/secullum'
 import { getLogsDir, getRelatoriosDir, logger } from './logger'
 import type { Plano } from './core/planner'
-import { GoogleSheetsGateway } from './sheets/googleSheets'
+import { extrairSpreadsheetId } from './sheets/googleSheets'
 import {
-  abrirGateway, criarAbasConfig, desfazerEscrita, executarEscritaLote, salvarRelatorio, simularLote,
+  abrirGateway, criarAbasConfig, desfazerEscrita, executarEscritaLote, gatewayDaConfig, preencherAutomatico, salvarRelatorio, simularLote,
   type EscritaDoDia, type Lote, type ResultadoDesfazer, type ResultadoEscrita,
 } from './service'
 import { carregarRegras, salvarRegras, type RegrasEditaveis } from './regras'
@@ -77,8 +79,8 @@ function openConfigWindow(): void {
   if (configWin && !configWin.isDestroyed()) { configWin.focus(); return }
   configWin = new BrowserWindow({
     width: 560,
-    height: 620,
-    resizable: false,
+    height: 720,
+    resizable: true,
     title: 'Frequência Agent — Configuração',
     autoHideMenuBar: true,
     webPreferences: { preload: preloadPath(), contextIsolation: true, nodeIntegration: false },
@@ -114,10 +116,51 @@ function openRegrasWindow(): void {
 }
 
 function registerIPC(): void {
+  // Já com os segredos decifrados — a tela de Configurações mostra/edita.
   ipcMain.handle('get-config', () => {
-    const p = getConfigPath()
-    if (!fs.existsSync(p)) return null
-    try { return JSON.parse(fs.readFileSync(p, 'utf-8')) } catch { return null }
+    if (!fs.existsSync(getConfigPath())) return null
+    try { return getConfig() } catch { return null }
+  })
+
+  ipcMain.handle('testar-ponto', async (_e, cfg: AgentConfig) => {
+    try {
+      return { ok: true, message: await new SecullumClient(credenciaisPonto(cfg)).testar(hojeISO()) }
+    } catch (err: any) {
+      return { ok: false, message: err.message ?? 'Erro desconhecido' }
+    }
+  })
+
+  // O fluxo de um clique: busca os últimos 7 dias no ponto e grava. Com
+  // apenasConferir, só monta a prévia — "Gravar agora" aplica essa prévia
+  // pelo mesmo caminho do 'escrever'.
+  ipcMain.handle('preencher', async (_e, params: { apenasConferir?: boolean; forcar?: boolean }) => {
+    ultimoLote = null
+    try {
+      const cfg = getConfig()
+      const r = await preencherAutomatico(abrirGateway(), new SecullumClient(credenciaisPonto(cfg)), {
+        dias: 7,
+        apenasConferir: !!params.apenasConferir,
+        forcar: !!params.forcar,
+      })
+      if (r.escrita) {
+        for (const d of r.escrita.dias) salvarRelatorio(d.plano, 'escrita', { escritas: d.escritas, puladas: d.puladas })
+        ultimaEscrita = r.escrita.dias.some(d => d.escritas.length) ? r.escrita.dias : null
+      } else {
+        for (const plano of r.lote.planos) salvarRelatorio(plano, 'simulacao')
+        ultimoLote = r.lote
+      }
+      return {
+        ok: true,
+        lote: r.lote,
+        escrita: r.escrita && {
+          erro: r.escrita.erro,
+          dias: r.escrita.dias.map(d => ({ data: d.data, aba: d.aba, escritas: d.escritas, puladas: d.puladas })),
+        },
+      }
+    } catch (err: any) {
+      logger.error('[preencher]', err.message)
+      return { ok: false, message: err.message ?? 'Erro desconhecido' }
+    }
   })
 
   ipcMain.handle('save-config', (_e, cfg: AgentConfig) => saveConfig(cfg))
@@ -137,7 +180,7 @@ function registerIPC(): void {
 
   ipcMain.handle('test-connection', async (_e, cfg: AgentConfig) => {
     try {
-      const gw = new GoogleSheetsGateway(cfg.spreadsheet_id, cfg.google_service_account_json_b64)
+      const gw = gatewayDaConfig({ ...cfg, spreadsheet_id: extrairSpreadsheetId(cfg.spreadsheet_id ?? '') })
       const titulo = await gw.titulo()
       const abas = await gw.listarAbas()
       const faltando = ['CONFIG_GERAL'].filter(a => !abas.includes(a))
@@ -270,6 +313,7 @@ function registerIPC(): void {
   ipcMain.handle('abrir-relatorios', () => shell.openPath(ensureDir(getRelatoriosDir())))
 
   ipcMain.handle('abrir-regras', () => openRegrasWindow())
+  ipcMain.handle('abrir-config', () => openConfigWindow())
 
   ipcMain.handle('regras-carregar', async () => {
     try {
@@ -292,6 +336,15 @@ function registerIPC(): void {
 }
 
 app.whenReady().then(() => {
+  // Senha do ponto e token do Apps Script cifrados no disco (DPAPI no Windows).
+  if (safeStorage.isEncryptionAvailable()) {
+    configurarCofre({
+      cifrar: t => safeStorage.encryptString(t).toString('base64'),
+      decifrar: b => safeStorage.decryptString(Buffer.from(b, 'base64')),
+    })
+  } else {
+    logger.warn('[main] Cofre do sistema indisponível — segredos ficam em texto puro no config.json.')
+  }
   registerIPC()
   tray = new Tray(buildTrayIcon())
   tray.setToolTip('Frequência Agent')

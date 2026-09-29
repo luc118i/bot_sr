@@ -68,12 +68,14 @@ export interface EntradaPlano {
 // negativo de manhã é só saldo parcial — `forcar` libera só esse caso.
 // Datas futuras param sempre. Domingos e feriados não passam por aqui: são
 // dias não úteis da planilha (colunas ocultas) e nunca são preenchidos.
+export class AntesDoCorteError extends Error {}
+
 export function validarData(data: string, cfg: ConfigPlanilha, now: Date, forcar: boolean): string[] {
   parseDataISO(data)
   const hoje = hojeISO(now)
   const avisos: string[] = []
   const bloquear = (msg: string) => {
-    if (!forcar) throw new Error(`${msg} (marque "forçar" se o expediente já acabou)`)
+    if (!forcar) throw new AntesDoCorteError(`${msg} (marque "forçar" se o expediente já acabou)`)
     avisos.push(`FORÇADO: ${msg}`)
   }
 

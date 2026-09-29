@@ -1,13 +1,16 @@
 import fs from 'fs'
 import path from 'path'
-import { getConfig } from './config'
+import { getConfig, tipoConexao, type AgentConfig } from './config'
+import { AppsScriptGateway } from './sheets/appsScriptGateway'
 import { getRelatoriosDir, logger } from './logger'
 import { ABAS_CONFIG, CABECALHOS_CONFIG, parseConfigPlanilha, type OverridesGeral } from './core/configPlanilha'
 import { detectarLayout, nomeAbaDoMes } from './core/layoutMes'
-import { DiaNaoUtilError, montarPlano, type Plano } from './core/planner'
-import { parsePontoHtml } from './core/pontoParser'
+import { AntesDoCorteError, DiaNaoUtilError, montarPlano, type Plano } from './core/planner'
+import { pontoDizFeriado, registrosDaApi } from './core/pontoApi'
+import { parsePontoHtml, type PontoRegistro } from './core/pontoParser'
 import { relatorioTexto, type ModoRelatorio } from './core/relatorio'
-import { parseDataISO } from './core/tempo'
+import { diaDaSemana, hojeISO, parseDataISO, toISO } from './core/tempo'
+import { PontoAuthError, type FontePonto } from './ponto/secullum'
 import { lerColaboradores } from './regras'
 import type { SheetGateway } from './sheets/gateway'
 import { GoogleSheetsGateway } from './sheets/googleSheets'
@@ -39,7 +42,13 @@ export interface Lote {
 
 export function abrirGateway(xlsx?: string): SheetGateway {
   if (xlsx) return new XlsxGateway(xlsx)
-  const cfg = getConfig()
+  return gatewayDaConfig(getConfig())
+}
+
+export function gatewayDaConfig(cfg: AgentConfig): SheetGateway {
+  if (tipoConexao(cfg) === 'apps_script') {
+    return new AppsScriptGateway(cfg.apps_script_url ?? '', cfg.apps_script_token ?? '')
+  }
   if (!cfg.spreadsheet_id) throw new Error('ID/link da planilha não configurado.')
   return new GoogleSheetsGateway(cfg.spreadsheet_id, cfg.google_service_account_json_b64)
 }
@@ -69,12 +78,23 @@ export async function carregarMes(gw: SheetGateway, abas: string[], ano: number,
   return { grid, layout }
 }
 
+// Um dia de ponto já lido — venha do HTML ou da API.
+interface DiaDePonto {
+  data: string
+  arquivo: string            // de onde veio (nome do HTML ou "ponto")
+  registros: PontoRegistro[]
+  avisos: string[]
+  feriadoNoPonto?: boolean   // só a API informa
+}
+
+type OpcoesPlanejar = Pick<OpcoesLote, 'forcar' | 'overrides'> & { now: Date }
+
 export async function simularLote(gw: SheetGateway, op: OpcoesLote): Promise<Lote> {
   const now = op.now ?? new Date()
   const lote: Lote = { geradoEm: now.toISOString(), planos: [], pulados: [], erros: [] }
 
-  // 1. Lê cada HTML e descobre de que dia ele é.
-  const dias: { data: string; arquivo: string; parse: ReturnType<typeof parsePontoHtml> }[] = []
+  // Lê cada HTML e descobre de que dia ele é.
+  const dias: DiaDePonto[] = []
   for (const { arquivo, html } of op.htmls) {
     const parse = parsePontoHtml(html)
     if (!parse.registros.length) {
@@ -85,14 +105,75 @@ export async function simularLote(gw: SheetGateway, op: OpcoesLote): Promise<Lot
       const outro = dias.find(d => d.data === parse.data)!.arquivo
       lote.erros.push({ data: parse.data, arquivo, motivo: `Dia ${parse.data} repetido (também em "${outro}") — só o primeiro foi usado.` })
     } else {
-      dias.push({ data: parse.data, arquivo, parse })
+      dias.push({ data: parse.data, arquivo, registros: parse.registros, avisos: parse.avisos })
     }
   }
-  dias.sort((a, b) => a.data.localeCompare(b.data))
+  return planejarDias(gw, dias, { ...op, now }, lote)
+}
+
+export interface OpcoesPreencher {
+  dias?: number              // quantos dias pra trás, contando hoje (padrão 7)
+  apenasConferir?: boolean   // true = só a prévia, não grava
+  forcar?: boolean
+  overrides?: OverridesGeral
+  now?: Date
+}
+
+export interface ResultadoPreencher {
+  lote: Lote
+  escrita: { dias: EscritaDoDia[]; erro: string | null } | null
+}
+
+// O fluxo de um clique: busca no ponto os últimos N dias, planeja cada um e
+// grava direto o que for seguro (as mesmas proteções da prévia: só célula
+// vazia, nunca "F", tudo desfazível). Domingos nem são consultados no ponto.
+export async function preencherAutomatico(gw: SheetGateway, ponto: FontePonto, op: OpcoesPreencher = {}): Promise<ResultadoPreencher> {
+  const now = op.now ?? new Date()
+  const lote: Lote = { geradoEm: now.toISOString(), planos: [], pulados: [], erros: [] }
+  const datas = ultimosDias(hojeISO(now), op.dias ?? 7)
+  logger.info(`[preencher] ${datas[0]} a ${datas.at(-1)} (${op.apenasConferir ? 'só conferir' : 'gravando'}) em ${gw.descricao}`)
+
+  const dias: DiaDePonto[] = []
+  for (const data of datas) {
+    if (diaDaSemana(parseDataISO(data)) === 0) {
+      lote.pulados.push({ data, arquivo: 'ponto', motivo: `${data} é domingo — não se preenche.` })
+      continue
+    }
+    try {
+      const lista = await ponto.pontoDiario(data)
+      const { registros, avisos } = registrosDaApi(lista)
+      if (!registros.length) {
+        lote.erros.push({ data, arquivo: 'ponto', motivo: 'O ponto não trouxe nenhum colaborador neste dia.' })
+        continue
+      }
+      dias.push({ data, arquivo: 'ponto', registros, avisos, feriadoNoPonto: pontoDizFeriado(lista) })
+    } catch (err: any) {
+      // Credencial errada vale pra todos os dias — para tudo com a mensagem clara.
+      if (err instanceof PontoAuthError) throw err
+      lote.erros.push({ data, arquivo: 'ponto', motivo: err.message })
+    }
+  }
+
+  await planejarDias(gw, dias, { forcar: op.forcar, overrides: op.overrides, now }, lote)
+  if (op.apenasConferir) return { lote, escrita: null }
+  return { lote, escrita: await executarEscritaLote(gw, lote.planos) }
+}
+
+function ultimosDias(hoje: string, n: number): string[] {
+  const { ano, mes, dia } = parseDataISO(hoje)
+  return Array.from({ length: n }, (_, i) => {
+    const d = new Date(ano, mes - 1, dia - (n - 1 - i))
+    return toISO({ ano: d.getFullYear(), mes: d.getMonth() + 1, dia: d.getDate() })
+  })
+}
+
+// Um plano por dia. Configuração e BASE DE DADOS são lidas uma vez só; cada
+// mês, uma vez. Um dia com problema não impede os outros.
+async function planejarDias(gw: SheetGateway, entrada: DiaDePonto[], op: OpcoesPlanejar, lote: Lote): Promise<Lote> {
+  const dias = [...entrada].sort((a, b) => a.data.localeCompare(b.data))
   if (!dias.length) return lote
   logger.info(`[simular] ${dias.map(d => d.data).join(', ')} em ${gw.descricao}`)
 
-  // 2. Configuração e BASE DE DADOS uma vez só; cada mês é lido uma vez.
   const titulo = await gw.titulo()
   const abas = await gw.listarAbas()
   const cfg = await carregarConfig(gw, op.overrides)
@@ -100,7 +181,7 @@ export async function simularLote(gw: SheetGateway, op: OpcoesLote): Promise<Lot
   const base = await lerColaboradores(gw, abas)
   const meses = new Map<string, Promise<Awaited<ReturnType<typeof carregarMes>>>>()
 
-  for (const { data, arquivo, parse } of dias) {
+  for (const { data, arquivo, registros, avisos, feriadoNoPonto } of dias) {
     try {
       const d = parseDataISO(data)
       const erroAno = conferirAno(titulo, d.ano)
@@ -108,12 +189,15 @@ export async function simularLote(gw: SheetGateway, op: OpcoesLote): Promise<Lot
       const chave = `${d.ano}-${d.mes}`
       if (!meses.has(chave)) meses.set(chave, carregarMes(gw, abas, d.ano, d.mes))
       const { grid, layout } = await meses.get(chave)!
-      const plano = montarPlano({ data, registros: parse.registros, layout, grid, cfg, base, now, forcar: op.forcar })
-      plano.avisos.unshift(...parse.avisos)
+      const plano = montarPlano({ data, registros, layout, grid, cfg, base, now: op.now, forcar: op.forcar })
+      plano.avisos.unshift(...avisos)
+      if (feriadoNoPonto) {
+        plano.avisos.unshift(`O ponto marca ${data} como feriado, mas a coluna do dia está visível na aba ${layout.aba} — se for feriado, esconda a coluna.`)
+      }
       lote.planos.push(plano)
-      logger.info(`[simular] ${data}: ${parse.registros.length} do ponto, resumo ${JSON.stringify(plano.resumo)}`)
+      logger.info(`[simular] ${data}: ${registros.length} do ponto, resumo ${JSON.stringify(plano.resumo)}`)
     } catch (err: any) {
-      if (err instanceof DiaNaoUtilError) lote.pulados.push({ data, arquivo, motivo: err.message })
+      if (err instanceof DiaNaoUtilError || err instanceof AntesDoCorteError) lote.pulados.push({ data, arquivo, motivo: err.message })
       else lote.erros.push({ data, arquivo, motivo: err.message })
     }
   }

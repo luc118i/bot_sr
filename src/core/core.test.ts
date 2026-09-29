@@ -9,8 +9,11 @@ import { validarData } from './planner'
 import { colunaA1, parseDataPlanilha, parseHora } from './tempo'
 import { normalize } from './normalize'
 import type { SheetGateway } from '../sheets/gateway'
-import { desfazerEscrita, executarEscrita, executarEscritaLote, simular, simularLote } from '../service'
+import { desfazerEscrita, executarEscrita, executarEscritaLote, preencherAutomatico, simular, simularLote } from '../service'
+import { registrosDaApi } from './pontoApi'
+import { PontoAuthError } from '../ponto/secullum'
 import { carregarRegras, salvarRegras, validarRegras } from '../regras'
+import { AppsScriptGateway } from '../sheets/appsScriptGateway'
 
 const FIXTURE = path.resolve(__dirname, '..', '..', 'test', 'fixtures', 'ponto-sintetico.html')
 const LETRAS = ['D', 'S', 'T', 'Q', 'Q', 'S', 'S']
@@ -408,4 +411,96 @@ test('regras: mostra os feriados encontrados (colunas ocultas que não são domi
   const gw = cenario()
   const r = await carregarRegras(gw, '2026-09-29')
   assert.deepEqual(r.feriados, [{ aba: 'Setembro', dias: [7], erro: null }, { aba: 'Outubro', dias: [12], erro: null }])
+})
+
+// ── conector Apps Script (fetch simulado) ───────────────────────────────────
+
+test('Apps Script: manda token+ação, entende {ok,dados} e explica os erros comuns', async () => {
+  const URL_OK = 'https://script.google.com/macros/s/ABC123/exec'
+  const pedidos: any[] = []
+  const original = globalThis.fetch
+  let resposta: () => Response = () => new Response(JSON.stringify({ ok: true, dados: { titulo: '[SR] - Frequência logística 2026', abas: ['Setembro'] } }))
+  globalThis.fetch = (async (url: string, init: any) => { pedidos.push({ url, corpo: JSON.parse(init.body) }); return resposta() }) as any
+  try {
+    assert.throws(() => new AppsScriptGateway('https://script.google.com/macros/s/ABC/dev', 't'), /termina(ndo)? em \/exec/)
+    const gw = new AppsScriptGateway(URL_OK, 'segredo')
+    assert.deepEqual(await gw.listarAbas(), ['Setembro'])
+    assert.equal(await gw.titulo(), '[SR] - Frequência logística 2026')
+    assert.equal(pedidos.length, 1) // info fica em cache
+    assert.deepEqual(pedidos[0].corpo, { token: 'segredo', acao: 'info' })
+
+    resposta = () => new Response(JSON.stringify({ ok: true, dados: [3, 7] }))
+    assert.deepEqual([...await gw.colunasOcultas('Setembro')], [3, 7])
+    assert.deepEqual(pedidos.at(-1).corpo, { token: 'segredo', acao: 'colunasOcultas', aba: 'Setembro' })
+
+    resposta = () => new Response(JSON.stringify({ ok: false, erro: 'Token inválido.' }))
+    await assert.rejects(gw.lerGrid('Setembro'), /Apps Script: Token inválido/)
+
+    resposta = () => new Response('<html>Faça login</html>', { status: 200 })
+    await assert.rejects(gw.lerGrid('Setembro'), /Qualquer pessoa/)
+  } finally {
+    globalThis.fetch = original
+  }
+})
+
+// ── fluxo de um clique (API do ponto simulada) ──────────────────────────────
+
+// Resposta no formato da API /Batidas/AAAA-MM-DD (nomes fictícios).
+function listaApi(feriado = false) {
+  const hora = (...h: string[]) => [...h, '', '', '', '', '', ''].slice(0, 6).map(valor => ({ valor }))
+  return [
+    { funcionarioNome: 'JOAO EXEMPLO DA SILVA', data: '', feriado, batidas: hora('07:58', '12:02'), saldo: '-04:00', situacao: 1 },
+    { funcionarioNome: 'PEDRO TESTE DE ARAUJO ', data: '', feriado, batidas: hora('8:05'), saldo: '-08:00', situacao: 2 },
+    { funcionarioNome: 'MARCOS FICTICIO PEREIRA', data: '', feriado, batidas: hora('08:06'), saldo: '-08:00', situacao: 2 },
+    { funcionarioNome: 'PAULO MODELO DA SILVA', data: '', feriado, batidas: [], saldo: '-08:00', situacao: 2 },
+    { funcionarioNome: 'ANDRÉ JOSÉ DE EXEMPLO', data: '', feriado, batidas: Array(6).fill({ valor: 'FÉRIAS' }), saldo: '', situacao: 0 },
+    { funcionarioNome: 'OTAVIO SEMENTRADA', data: '', feriado, batidas: hora('', '12:00'), saldo: '-08:00', situacao: 2 },
+  ]
+}
+
+test('API do ponto: vira os mesmos registros do leitor de HTML', () => {
+  const { registros, avisos } = registrosDaApi(listaApi())
+  assert.deepEqual(avisos, [])
+  const por = Object.fromEntries(registros.map(r => [normalize(r.nome), r]))
+  assert.equal(por['JOAO EXEMPLO DA SILVA']!.entrada1, '07:58')
+  assert.equal(por['JOAO EXEMPLO DA SILVA']!.icone, 'amarelo')
+  assert.equal(por['PEDRO TESTE DE ARAUJO']!.entrada1, '08:05') // "8:05" normalizado
+  assert.equal(por['PAULO MODELO DA SILVA']!.status, 'sem_registro')
+  assert.equal(por['ANDRE JOSE DE EXEMPLO']!.status, 'ferias')
+  assert.equal(por['OTAVIO SEMENTRADA']!.status, 'desconhecido')
+})
+
+test('um clique: busca 7 dias, pula domingo sem consultar, hoje antes do corte e feriado; grava o resto', async () => {
+  const gw = cenario()
+  const consultados: string[] = []
+  const ponto = { pontoDiario: async (data: string) => { consultados.push(data); return listaApi() } }
+  // Quarta 30/09 às 11h: janela 24/09 (qui) a 30/09 (qua).
+  const r = await preencherAutomatico(gw, ponto, { now: new Date(2026, 8, 30, 11, 0) })
+
+  assert.deepEqual(consultados, ['2026-09-24', '2026-09-25', '2026-09-26', '2026-09-28', '2026-09-29', '2026-09-30'])
+  assert.deepEqual(r.lote.pulados.map(p => p.data), ['2026-09-27', '2026-09-30'])
+  assert.match(r.lote.pulados[1]!.motivo, /18:00/) // hoje, antes do horário de corte
+  assert.deepEqual(r.lote.planos.map(p => p.data), ['2026-09-24', '2026-09-25', '2026-09-26', '2026-09-28', '2026-09-29'])
+  assert.equal(r.escrita!.erro, null)
+  assert.ok(r.escrita!.dias.every(d => d.escritas.every(e => e.codigo !== 'F')))
+  // Gravou de verdade: JOAO (linha 8) na coluna do dia 29 (AI).
+  assert.equal(gw.abas['Setembro']![7]![34], '.')
+})
+
+test('um clique em modo "só conferir" não grava nada', async () => {
+  const gw = cenario()
+  const antes = preenchidas(gw)
+  const r = await preencherAutomatico(gw, { pontoDiario: async () => listaApi() }, { now: new Date(2026, 8, 30, 19, 0), apenasConferir: true })
+  assert.equal(r.escrita, null)
+  assert.ok(r.lote.planos.some(p => p.escritas.length > 0))
+  assert.deepEqual(preenchidas(gw), antes)
+})
+
+test('um clique: feriado no ponto com coluna visível vira aviso; senha errada para tudo', async () => {
+  const gw = cenario()
+  const r = await preencherAutomatico(gw, { pontoDiario: async (d: string) => listaApi(d === '2026-09-29') }, { now: new Date(2026, 8, 30, 19, 0), apenasConferir: true })
+  assert.match(r.lote.planos.find(p => p.data === '2026-09-29')!.avisos.join('\n'), /marca 2026-09-29 como feriado/)
+
+  const semAcesso = { pontoDiario: async () => { throw new PontoAuthError('Número ou senha do ponto inválidos.') } }
+  await assert.rejects(preencherAutomatico(gw, semAcesso, { now: new Date(2026, 8, 30, 19, 0) }), /senha do ponto/)
 })

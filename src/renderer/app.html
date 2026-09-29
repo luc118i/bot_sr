@@ -10,20 +10,27 @@
     .header { background: #1e293b; color: white; padding: 14px 24px; }
     .header h1 { font-size: 15px; font-weight: 600; }
     .header p { font-size: 11px; color: #94a3b8; margin-top: 2px; }
-    .bar { display: flex; gap: 12px; align-items: flex-end; padding: 14px 24px; background: white; border-bottom: 1px solid #e2e8f0; flex-wrap: wrap; }
-    .bar label { display: block; font-size: 11px; font-weight: 600; color: #64748b; margin-bottom: 4px; text-transform: uppercase; letter-spacing: .04em; }
-    .file { padding: 7px 10px; border: 1px dashed #cbd5e1; border-radius: 6px; font-size: 12px; color: #64748b; min-width: 220px; max-width: 420px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .hero { background: white; border-bottom: 1px solid #e2e8f0; padding: 22px 24px 16px; display: flex; flex-direction: column; align-items: center; gap: 10px; }
+    .hero .sub { font-size: 12px; color: #64748b; }
     button { padding: 7px 14px; border-radius: 6px; font-size: 12px; font-weight: 500; cursor: pointer; border: 1px solid #d1d5db; background: white; color: #1e293b; }
     button.primary { background: #1e293b; color: white; border-color: #1e293b; }
+    button.grande { font-size: 15px; font-weight: 600; padding: 12px 34px; border-radius: 8px; }
     button.danger { background: #b45309; color: white; border-color: #b45309; }
+    button.link { border: none; background: none; color: #475569; text-decoration: underline; padding: 4px 6px; }
     button:disabled { opacity: .45; cursor: default; }
-    .bar label.chk { font-size: 12px; color: #475569; display: flex; gap: 4px; align-items: center; text-transform: none; letter-spacing: 0; font-weight: 400; margin: 0 0 6px; }
+    .atalhos { display: flex; gap: 6px; flex-wrap: wrap; justify-content: center; align-items: center; }
+    .chk { font-size: 12px; color: #475569; display: flex; gap: 4px; align-items: center; }
+    details.avancado { width: 100%; max-width: 760px; font-size: 12px; color: #475569; margin-top: 4px; }
+    details.avancado > summary { cursor: pointer; text-align: center; }
+    .linha-arq { display: flex; gap: 6px; align-items: center; justify-content: center; margin-top: 8px; flex-wrap: wrap; }
+    .file { padding: 7px 10px; border: 1px dashed #cbd5e1; border-radius: 6px; font-size: 12px; color: #64748b; min-width: 220px; max-width: 420px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
     main { padding: 16px 24px 40px; }
     .msg { padding: 10px 12px; border-radius: 6px; font-size: 12px; margin-bottom: 12px; white-space: pre-wrap; }
     .msg.ok { background: #dcfce7; color: #166534; }
     .msg.err { background: #fee2e2; color: #991b1b; }
     .msg.warn { background: #fffbeb; color: #92400e; border: 1px solid #fde68a; }
     .msg.info { background: #e0f2fe; color: #075985; }
+    .msg button { display: block; margin-top: 8px; }
     .cards { display: flex; gap: 10px; flex-wrap: wrap; margin-bottom: 14px; }
     .card { background: white; border: 1px solid #e2e8f0; border-radius: 8px; padding: 10px 14px; min-width: 130px; }
     .card .n { font-size: 20px; font-weight: 600; font-variant-numeric: tabular-nums; }
@@ -46,28 +53,31 @@
 <body>
   <div class="header">
     <h1>Preencher frequência</h1>
-    <p>1. Simule e revise · 2. Escreva. Célula já preenchida nunca é alterada; "sem ponto" nunca vira falta sozinho; domingos e feriados (colunas ocultas) nunca são preenchidos.</p>
+    <p>Busca o ponto dos últimos 7 dias e preenche a planilha. Nunca altera o que já está lançado, nunca marca falta sozinho; domingos e feriados (colunas ocultas) ficam em branco. Tudo pode ser desfeito.</p>
   </div>
 
-  <div class="bar">
-    <div>
-      <label>HTML do ponto — um por dia</label>
-      <div style="display:flex;gap:6px">
+  <div class="hero">
+    <button class="primary grande" id="btnPreencher">Preencher frequência</button>
+    <div class="sub">últimos 7 dias · o dia de hoje só entra depois do horário de corte</div>
+    <div class="atalhos">
+      <button class="link" id="btnConferir" title="Mostra o que seria preenchido, sem gravar nada">Só conferir (não grava)</button>
+      <label class="chk" title="Inclui o dia de hoje mesmo antes do horário de corte"><input type="checkbox" id="forcar" /> incluir hoje antes do corte</label>
+      <button class="link" id="btnRegras">Horários e regras</button>
+      <button class="link" id="btnConfig">Configurações</button>
+      <button class="link" id="btnRel">Relatórios</button>
+      <button class="link" id="btnDesfazerAnt" title="Escolhe o(s) relatório(s) de escrita já feita(s) e apaga as células que o bot gravou">Desfazer escrita anterior...</button>
+    </div>
+    <details class="avancado">
+      <summary>Avançado: conferir a partir de arquivos HTML do ponto</summary>
+      <div class="linha-arq">
         <div class="file" id="htmlName">Nenhum arquivo</div>
         <button id="btnHtml">Selecionar...</button>
+        <button id="btnSim">Conferir arquivos</button>
       </div>
-    </div>
-    <label class="chk" title="Libera classificar o dia de hoje antes do horário de corte"><input type="checkbox" id="forcar" /> forçar (hoje, antes do horário de corte)</label>
-    <button class="primary" id="btnSim">Simular</button>
-    <button class="danger" id="btnEsc" disabled>Escrever na planilha</button>
-    <button id="btnRel">Relatórios</button>
-    <button id="btnRegras">Horários e regras</button>
-    <button id="btnDesfazerAnt" title="Escolhe o(s) relatório(s) de escrita já feita(s) e apaga as células que o bot gravou">Desfazer escrita anterior...</button>
+    </details>
   </div>
 
-  <main id="out">
-    <div class="msg info">Na tela de acompanhamento de ponto, escolha o dia e espere a lista carregar. Aperte F12 → aba Elements → botão direito em &lt;html&gt; → Copy → Copy outerHTML e cole num arquivo .html. Repita para cada dia da semana (um arquivo por dia — a data é lida de dentro do HTML), selecione todos aqui e clique em Simular.</div>
-  </main>
+  <main id="out"></main>
 
   <script>
     const $ = id => document.getElementById(id)
@@ -87,7 +97,36 @@
       const [a, m, d] = iso.split('-').map(Number)
       return `${SEMANA[new Date(a, m - 1, d).getDay()]}, ${String(d).padStart(2, '0')}/${String(m).padStart(2, '0')}`
     }
+    function ocupado(sim) {
+      for (const id of ['btnPreencher', 'btnConferir', 'btnSim']) $(id).disabled = sim
+    }
 
+    // Erro com atalho pra tela que resolve (login do ponto, conexão, regras).
+    function mostrarErro(texto) {
+      const box = el('div', { className: 'msg err', textContent: texto })
+      if (/Horários e regras/.test(texto)) box.append(el('button', { textContent: 'Abrir Horários e regras', onclick: () => window.agent.abrirRegras() }))
+      else if (/Configurações|ponto|Apps Script|planilha|Service Account/i.test(texto)) box.append(el('button', { textContent: 'Abrir Configurações', onclick: () => window.agent.abrirConfig() }))
+      $('out').replaceChildren(box)
+    }
+
+    async function preencher(apenasConferir) {
+      ocupado(true)
+      msg('info', apenasConferir ? 'Conferindo os últimos 7 dias no ponto... (nada será gravado)' : 'Buscando os últimos 7 dias no ponto e preenchendo a planilha...')
+      const r = await window.agent.preencher({ apenasConferir, forcar: $('forcar').checked })
+      ocupado(false)
+      if (!r.ok) return mostrarErro(r.message)
+      render(r.lote, apenasConferir ? 'conferir' : 'gravado')
+      if (r.escrita) $('out').prepend(boxEscrita(r.escrita))
+    }
+
+    $('btnPreencher').onclick = () => preencher(false)
+    $('btnConferir').onclick = () => preencher(true)
+    $('btnRel').onclick = () => window.agent.abrirRelatorios()
+    $('btnRegras').onclick = () => window.agent.abrirRegras()
+    $('btnConfig').onclick = () => window.agent.abrirConfig()
+    $('btnDesfazerAnt').onclick = async () => mostrarDesfeita(await window.agent.desfazerDeRelatorio())
+
+    // ── Avançado: arquivos HTML ──
     $('btnHtml').onclick = async () => {
       const r = await window.agent.pickHtmlFiles()
       if (!r) return
@@ -95,38 +134,34 @@
       $('htmlName').textContent = r.length === 1 ? r[0].name : `${r.length} arquivos: ${r.map(f => f.name).join(', ')}`
       $('htmlName').title = r.map(f => f.name).join('\n')
     }
-
-    $('btnRel').onclick = () => window.agent.abrirRelatorios()
-    $('btnRegras').onclick = () => window.agent.abrirRegras()
-
     $('btnSim').onclick = async () => {
       if (!htmlPaths.length) return msg('err', 'Escolha o(s) HTML(s) do ponto primeiro.')
-      $('btnSim').disabled = true; $('btnEsc').disabled = true
-      msg('info', 'Lendo o ponto e a planilha...')
+      ocupado(true)
+      msg('info', 'Lendo os arquivos e a planilha...')
       const r = await window.agent.simular({ htmlPaths, forcar: $('forcar').checked })
-      $('btnSim').disabled = false
-      if (!r.ok) {
-        msg('err', r.message)
-        if (/Horários e regras/.test(r.message)) $('out').append(el('button', { textContent: 'Abrir Horários e regras', onclick: () => window.agent.abrirRegras() }))
-        return
-      }
-      render(r.lote)
+      ocupado(false)
+      if (!r.ok) return mostrarErro(r.message)
+      render(r.lote, 'conferir')
     }
 
-    $('btnEsc').onclick = async () => {
-      const resumo = $('btnEsc').dataset.resumo
-      if (!confirm(`Gravar na planilha do Google?\n\n${resumo}\n\nCélulas que alguém preencher nesse meio tempo serão puladas.`)) return
-      $('btnEsc').disabled = true
+    // "Gravar agora" depois de conferir: grava exatamente o que foi mostrado.
+    async function gravarConferido(btn, resumo) {
+      if (!confirm(`Gravar na planilha?\n\n${resumo}\n\nCélulas que alguém preencher nesse meio tempo serão puladas.`)) return
+      btn.disabled = true
       const r = await window.agent.escrever()
-      const box = el('div', { className: 'msg ' + (r.ok ? 'ok' : 'err') })
-      const linhas = r.dias.map(d =>
-        `${nomeDia(d.data)}: ${d.escritas.length} gravada(s)` +
+      $('out').prepend(boxEscrita({ erro: r.ok ? null : r.message, dias: r.dias || [] }))
+    }
+
+    function boxEscrita(escrita) {
+      const total = escrita.dias.reduce((n, d) => n + d.escritas.length, 0)
+      const box = el('div', { className: 'msg ' + (escrita.erro ? 'err' : 'ok') })
+      const linhas = escrita.dias.map(d =>
+        `${nomeDia(d.data)}: ${d.escritas.length} célula(s)` +
         (d.escritas.length ? ` — ${d.escritas.map(e => e.celula + '="' + e.codigo + '"').join(', ')}` : '') +
-        (d.puladas.length ? `\n   puladas (já preenchidas): ${d.puladas.map(p => p.celula + '="' + p.valorEncontrado + '"').join(', ')}` : ''))
-      box.textContent = (r.ok ? 'Gravado.\n' : r.message + '\n') + linhas.join('\n')
-      if (r.dias.some(d => d.escritas.length)) {
-        const btn = el('button', { textContent: r.dias.length > 1 ? 'Desfazer esta escrita (todos os dias)' : 'Desfazer esta escrita' })
-        btn.style.cssText = 'display:block;margin-top:8px'
+        (d.puladas.length ? `\n   puladas (alguém preencheu antes): ${d.puladas.map(p => p.celula + '="' + p.valorEncontrado + '"').join(', ')}` : ''))
+      box.textContent = (escrita.erro ? escrita.erro + '\n' : `Pronto: ${total} célula(s) preenchida(s).\n`) + linhas.join('\n')
+      if (total) {
+        const btn = el('button', { textContent: 'Desfazer esta escrita' })
         btn.onclick = async () => {
           if (!confirm('Apagar as células gravadas pelo bot nesta escrita?\n\nSó são apagadas as que ainda tiverem exatamente o código que o bot gravou — o que alguém tiver mudado depois fica.')) return
           btn.disabled = true
@@ -134,7 +169,7 @@
         }
         box.append(btn)
       }
-      $('out').prepend(box)
+      return box
     }
 
     function mostrarDesfeita(r) {
@@ -147,39 +182,43 @@
       $('out').prepend(box)
     }
 
-    $('btnDesfazerAnt').onclick = async () => mostrarDesfeita(await window.agent.desfazerDeRelatorio())
-
-    function render(lote) {
+    // modo 'conferir' = prévia (nada gravado) · 'gravado' = resumo do que foi feito.
+    function render(lote, modo) {
       const out = $('out')
       out.replaceChildren()
-      const total = lote.planos.reduce((n, p) => n + p.escritas.length, 0)
-      $('btnEsc').textContent = `Escrever na planilha (${total})`
-      $('btnEsc').disabled = total === 0
-      $('btnEsc').dataset.resumo = lote.planos.filter(p => p.escritas.length).map(p => `${nomeDia(p.data)}: ${p.escritas.length} célula(s)`).join('\n')
+      const rot = s => (modo === 'gravado' && s === 'escrever' ? 'Preenchido pelo bot' : ROT[s])
 
-      const dias = lote.planos.map(p => nomeDia(p.data)).join(' · ')
-      out.append(el('div', { className: 'msg info', textContent: `SIMULAÇÃO — nada foi gravado ainda.${dias ? '\nDias: ' + dias : ''}` }))
+      if (modo === 'conferir') {
+        const total = lote.planos.reduce((n, p) => n + p.escritas.length, 0)
+        const resumo = lote.planos.filter(p => p.escritas.length).map(p => `${nomeDia(p.data)}: ${p.escritas.length} célula(s)`).join('\n')
+        const box = el('div', { className: 'msg info', textContent: `Só conferência — nada foi gravado. ${total} célula(s) seriam preenchidas.` })
+        if (total) {
+          const btn = el('button', { className: 'danger', textContent: `Gravar agora (${total})` })
+          btn.onclick = () => gravarConferido(btn, resumo)
+          box.append(btn)
+        }
+        out.append(box)
+      }
 
       if (lote.erros.length) {
-        out.append(el('div', { className: 'msg err', textContent: 'Não simulados (corrija e simule de novo):\n' + lote.erros.map(e => `• ${e.data ? nomeDia(e.data) : e.arquivo}: ${e.motivo}`).join('\n') }))
+        out.append(el('div', { className: 'msg err', textContent: 'Dias não processados:\n' + lote.erros.map(e => `• ${e.data ? nomeDia(e.data) : e.arquivo}: ${e.motivo}`).join('\n') }))
       }
       if (lote.pulados.length) {
-        out.append(el('div', { className: 'msg warn', textContent: 'Pulados — dia não útil:\n' + lote.pulados.map(p => `• ${nomeDia(p.data)}: ${p.motivo}`).join('\n') }))
+        out.append(el('div', { className: 'msg warn', textContent: 'Pulados:\n' + lote.pulados.map(p => `• ${nomeDia(p.data)}: ${p.motivo}`).join('\n') }))
       }
 
-      // Totais do lote todo.
       const soma = {}
       for (const p of lote.planos) for (const s of ORDEM) soma[s] = (soma[s] || 0) + (p.resumo[s] || 0)
       const cards = el('div', { className: 'cards' })
       for (const s of ORDEM) {
         if (!soma[s] || s === 'ausente_no_ponto') continue
-        const c = el('div', { className: 'card' }, el('div', { className: 'n', textContent: soma[s] }), el('div', { className: 'l', textContent: ROT[s] }))
+        const c = el('div', { className: 'card' }, el('div', { className: 'n', textContent: soma[s] }), el('div', { className: 'l', textContent: rot(s) }))
         c.querySelector('.n').style.color = COR[s]
         cards.append(c)
       }
       out.append(cards)
 
-      // Avisos iguais em todos os dias (ex.: da aba do mês) aparecem uma vez só.
+      // Avisos iguais em vários dias (ex.: da aba do mês) aparecem uma vez só.
       const avisos = [...new Set(lote.planos.flatMap(p => p.avisos))]
       if (avisos.length) {
         const ul = el('ul')
@@ -187,13 +226,13 @@
         out.append(el('div', { className: 'avisos' }, el('b', { textContent: 'Avisos' }), ul))
       }
 
-      for (const p of lote.planos) out.append(renderDia(p, lote.planos.length === 1))
+      for (const p of lote.planos) out.append(renderDia(p, rot, lote.planos.length === 1))
     }
 
-    function renderDia(p, aberto) {
-      const resumo = ['escrever', 'revisar', 'divergente', 'nao_encontrado'].filter(s => p.resumo[s]).map(s => `${p.resumo[s]} ${ROT[s].toLowerCase()}`).join(' · ')
+    function renderDia(p, rot, aberto) {
+      const resumo = ['escrever', 'revisar', 'divergente', 'nao_encontrado'].filter(s => p.resumo[s]).map(s => `${p.resumo[s]} ${rot(s).toLowerCase()}`).join(' · ')
       const corpo = el('div', { className: 'corpo' })
-      const box = el('details', { className: 'dia', open: aberto || p.resumo.escrever > 0 || p.resumo.revisar > 0 || p.resumo.divergente > 0 },
+      const box = el('details', { className: 'dia', open: aberto || p.resumo.revisar > 0 || p.resumo.divergente > 0 || p.resumo.nao_encontrado > 0 },
         el('summary', {}, `${nomeDia(p.data)} — aba ${p.aba}`, el('span', { className: 'res', textContent: resumo || 'nada a fazer' })),
         corpo)
 
@@ -208,7 +247,7 @@
           corpo.append(el('details', { className: 'outros' }, el('summary', { textContent: `${ROT[s]} (${its.length}) — não é pendência, clique para ver` }), lista))
           continue
         }
-        corpo.append(el('h3', { textContent: `${ROT[s]} (${its.length})` }))
+        corpo.append(el('h3', { textContent: `${rot(s)} (${its.length})` }))
         const tb = el('tbody')
         for (const i of its) {
           const ponto = i.ponto ? (i.ponto.status === 'batido' ? `entrada ${i.ponto.entrada1}` : i.ponto.status.replace('_', ' ')) : '—'
