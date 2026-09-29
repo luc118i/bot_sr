@@ -1,0 +1,33 @@
+appId: com.sr.frequencia-agent
+productName: Frequência Agent
+copyright: SR Atacadista
+
+win:
+  target: nsis
+
+nsis:
+  oneClick: false
+  allowToChangeInstallationDirectory: false
+  createDesktopShortcut: false
+  createStartMenuShortcut: true
+  runAfterFinish: true
+  artifactName: "Frequencia-Agent-Setup.exe"
+
+files:
+  - dist/**/*
+  - "!dist/**/*.map"
+  - "!dist/**/*.test.js"
+
+extraResources:
+  - from: src/renderer
+    to: renderer
+  - from: dist/preload.js
+    to: preload.js
+  - from: build/tray.png
+    to: tray.png
+
+directories:
+  output: release
+  buildResources: build
+
+asar: true

@@ -1,0 +1,173 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8" />
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'" />
+  <title>Frequência Agent — Preencher frequência</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: #f8fafc; color: #1e293b; font-size: 13px; }
+    .header { background: #1e293b; color: white; padding: 14px 24px; }
+    .header h1 { font-size: 15px; font-weight: 600; }
+    .header p { font-size: 11px; color: #94a3b8; margin-top: 2px; }
+    .bar { display: flex; gap: 12px; align-items: flex-end; padding: 14px 24px; background: white; border-bottom: 1px solid #e2e8f0; flex-wrap: wrap; }
+    .bar label { display: block; font-size: 11px; font-weight: 600; color: #64748b; margin-bottom: 4px; text-transform: uppercase; letter-spacing: .04em; }
+    input[type="date"] { padding: 6px 8px; border: 1px solid #d1d5db; border-radius: 6px; font-size: 12px; }
+    .file { padding: 7px 10px; border: 1px dashed #cbd5e1; border-radius: 6px; font-size: 12px; color: #64748b; min-width: 220px; max-width: 360px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    button { padding: 7px 14px; border-radius: 6px; font-size: 12px; font-weight: 500; cursor: pointer; border: 1px solid #d1d5db; background: white; color: #1e293b; }
+    button.primary { background: #1e293b; color: white; border-color: #1e293b; }
+    button.danger { background: #b45309; color: white; border-color: #b45309; }
+    button:disabled { opacity: .45; cursor: default; }
+    .chk { font-size: 12px; color: #475569; display: flex; gap: 4px; align-items: center; }
+    main { padding: 16px 24px 40px; }
+    .msg { padding: 10px 12px; border-radius: 6px; font-size: 12px; margin-bottom: 12px; white-space: pre-wrap; }
+    .msg.ok { background: #dcfce7; color: #166534; }
+    .msg.err { background: #fee2e2; color: #991b1b; }
+    .msg.info { background: #e0f2fe; color: #075985; }
+    .cards { display: flex; gap: 10px; flex-wrap: wrap; margin-bottom: 14px; }
+    .card { background: white; border: 1px solid #e2e8f0; border-radius: 8px; padding: 10px 14px; min-width: 130px; }
+    .card .n { font-size: 20px; font-weight: 600; font-variant-numeric: tabular-nums; }
+    .card .l { font-size: 11px; color: #64748b; }
+    .avisos { background: #fffbeb; border: 1px solid #fde68a; border-radius: 8px; padding: 10px 14px; margin-bottom: 14px; font-size: 12px; color: #92400e; }
+    .avisos li { margin-left: 16px; margin-top: 3px; }
+    h2 { font-size: 12px; text-transform: uppercase; letter-spacing: .05em; color: #475569; margin: 18px 0 6px; }
+    table { width: 100%; border-collapse: collapse; background: white; border: 1px solid #e2e8f0; border-radius: 8px; overflow: hidden; }
+    th, td { text-align: left; padding: 6px 10px; border-bottom: 1px solid #f1f5f9; font-size: 12px; vertical-align: top; }
+    th { background: #f1f5f9; font-size: 11px; color: #475569; font-weight: 600; }
+    td.cod { font-weight: 700; font-family: Consolas, monospace; }
+    td.mot { color: #475569; }
+    .tag { display: inline-block; padding: 1px 6px; border-radius: 4px; font-size: 11px; font-weight: 600; }
+  </style>
+</head>
+<body>
+  <div class="header">
+    <h1>Preencher frequência</h1>
+    <p>1. Simule e revise · 2. Escreva. Célula já preenchida nunca é alterada; "sem ponto" nunca vira falta sozinho.</p>
+  </div>
+
+  <div class="bar">
+    <div>
+      <label>Dia</label>
+      <input type="date" id="data" />
+    </div>
+    <div>
+      <label>HTML do ponto</label>
+      <div style="display:flex;gap:6px">
+        <div class="file" id="htmlName">Nenhum arquivo</div>
+        <button id="btnHtml">Selecionar...</button>
+      </div>
+    </div>
+    <label class="chk"><input type="checkbox" id="forcar" /> forçar (domingo/feriado/antes do corte)</label>
+    <button class="primary" id="btnSim">Simular</button>
+    <button class="danger" id="btnEsc" disabled>Escrever na planilha</button>
+    <button id="btnRel">Relatórios</button>
+  </div>
+
+  <main id="out">
+    <div class="msg info">Salve a tela de acompanhamento de ponto do dia (Ctrl+S → "Página da Web, completa" ou só HTML) depois de a lista carregar, escolha o arquivo e clique em Simular.</div>
+  </main>
+
+  <script>
+    const $ = id => document.getElementById(id)
+    const ROT = {
+      escrever: 'Será escrito', revisar: 'Precisa de revisão', divergente: 'Já lançado — diverge do bot',
+      nao_encontrado: 'Não encontrado na planilha', sem_linha_no_mes: 'Sem linha na aba do mês', ambiguo: 'Match ambíguo',
+      confere: 'Já lançado — confere', ja_lancado: 'Já lançado à mão', ausente_no_ponto: 'Não aparece no ponto',
+    }
+    const ORDEM = ['escrever', 'revisar', 'divergente', 'nao_encontrado', 'sem_linha_no_mes', 'ambiguo', 'confere', 'ja_lancado', 'ausente_no_ponto']
+    const COR = { escrever: '#166534', revisar: '#b45309', divergente: '#b91c1c', nao_encontrado: '#b91c1c', sem_linha_no_mes: '#b45309', ambiguo: '#b91c1c', confere: '#475569', ja_lancado: '#475569', ausente_no_ponto: '#475569' }
+    let htmlPath = null
+
+    const d = new Date()
+    $('data').value = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+
+    function el(tag, props = {}, ...kids) {
+      const e = document.createElement(tag)
+      Object.assign(e, props)
+      for (const k of kids) e.append(k)
+      return e
+    }
+    function msg(kind, text) { const out = $('out'); out.replaceChildren(el('div', { className: 'msg ' + kind, textContent: text })) }
+
+    $('btnHtml').onclick = async () => {
+      const r = await window.agent.pickHtmlFile()
+      if (!r) return
+      htmlPath = r.path
+      $('htmlName').textContent = r.name
+    }
+
+    $('btnRel').onclick = () => window.agent.abrirRelatorios()
+
+    $('btnSim').onclick = async () => {
+      if (!htmlPath) return msg('err', 'Escolha o HTML do ponto primeiro.')
+      $('btnSim').disabled = true; $('btnEsc').disabled = true
+      msg('info', 'Lendo o ponto e a planilha...')
+      const r = await window.agent.simular({ data: $('data').value, htmlPath, forcar: $('forcar').checked })
+      $('btnSim').disabled = false
+      if (!r.ok) return msg('err', r.message)
+      render(r.plano)
+      $('btnEsc').disabled = r.plano.escritas.length === 0
+    }
+
+    $('btnEsc').onclick = async () => {
+      const n = Number($('btnEsc').dataset.n || 0)
+      if (!confirm(`Gravar ${n} célula(s) na planilha do Google?\n\nCélulas que alguém preencher nesse meio tempo serão puladas.`)) return
+      $('btnEsc').disabled = true
+      const r = await window.agent.escrever()
+      const box = el('div', { className: 'msg ' + (r.ok ? 'ok' : 'err') })
+      box.textContent = r.ok
+        ? `Gravado: ${r.escritas.length} célula(s).` + (r.puladas.length ? `\nPuladas (já preenchidas): ${r.puladas.map(p => p.celula + '="' + p.valorEncontrado + '"').join(', ')}` : '')
+        : r.message
+      $('out').prepend(box)
+    }
+
+    function render(p) {
+      const out = $('out')
+      out.replaceChildren()
+      $('btnEsc').dataset.n = p.escritas.length
+      $('btnEsc').textContent = `Escrever na planilha (${p.escritas.length})`
+
+      out.append(el('div', { className: 'msg info', textContent: `SIMULAÇÃO de ${p.data} na aba "${p.aba}" — nada foi gravado ainda.` }))
+
+      const cards = el('div', { className: 'cards' })
+      for (const s of ORDEM) {
+        if (!p.resumo[s]) continue
+        const c = el('div', { className: 'card' }, el('div', { className: 'n', textContent: p.resumo[s] }), el('div', { className: 'l', textContent: ROT[s] }))
+        c.querySelector('.n').style.color = COR[s]
+        cards.append(c)
+      }
+      out.append(cards)
+
+      if (p.avisos.length) {
+        const ul = el('ul')
+        for (const a of p.avisos) ul.append(el('li', { textContent: a }))
+        out.append(el('div', { className: 'avisos' }, el('b', { textContent: 'Avisos' }), ul))
+      }
+
+      for (const s of ORDEM) {
+        const its = p.itens.filter(i => i.situacao === s)
+        if (!its.length) continue
+        out.append(el('h2', { textContent: `${ROT[s]} (${its.length})` }))
+        const tb = el('tbody')
+        for (const i of its) {
+          const ponto = i.ponto ? (i.ponto.status === 'batido' ? `entrada ${i.ponto.entrada1}` : i.ponto.status.replace('_', ' ')) : '—'
+          const previsto = i.horario ? `${i.horario.previsto} +${i.horario.toleranciaMin}min (${i.horario.origem})` : ''
+          tb.append(el('tr', {},
+            el('td', { textContent: i.celula || '—' }),
+            el('td', { textContent: i.adm || '—' }),
+            el('td', { textContent: i.nomePlanilha || i.nomePonto || '—' }),
+            el('td', { textContent: ponto }),
+            el('td', { textContent: previsto }),
+            el('td', { className: 'cod', textContent: i.valorAtual || '' }),
+            el('td', { className: 'cod', textContent: i.codigo || '' }),
+            el('td', { className: 'mot', textContent: i.motivo }),
+          ))
+        }
+        const head = el('tr')
+        for (const h of ['Célula', 'ADM', 'Colaborador', 'Ponto', 'Previsto', 'Atual', 'Bot', 'Motivo']) head.append(el('th', { textContent: h }))
+        out.append(el('table', {}, el('thead', {}, head), tb))
+      }
+    }
+  </script>
+</body>
+</html>

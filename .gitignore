@@ -1,0 +1,31 @@
+# Dependências e build
+node_modules/
+dist/
+release/
+
+# Credenciais e configuração local (service account fica aqui, em base64)
+config.json
+*.service-account.json
+.env
+.env.*
+
+# Dados gerados em execução
+relatorios/
+logs/
+*.log
+
+# Dados reais da empresa: cópias da planilha e HTML salvo do ponto
+*.xlsx
+*.xls
+*.csv
+ponto*.html
+*_arquivos/
+*_files/
+!test/fixtures/*.html
+
+# Sistema/editor
+.DS_Store
+Thumbs.db
+desktop.ini
+.vscode/
+.idea/

@@ -1,0 +1,34 @@
+{
+  "name": "frequencia-agent",
+  "productName": "Frequência Agent",
+  "version": "0.1.0",
+  "description": "Agente local que preenche a planilha de frequência a partir do ponto",
+  "main": "dist/main.js",
+  "private": true,
+  "scripts": {
+    "build:ts": "tsc",
+    "dev": "npm run build:ts && electron .",
+    "cli": "node dist/cli.js",
+    "test": "npm run build:ts && node --test \"dist/**/*.test.js\"",
+    "dist": "npm run build:ts && electron-builder"
+  },
+  "dependencies": {
+    "cheerio": "^1.0.0",
+    "exceljs": "^4.4.0",
+    "googleapis": "^171.4.0"
+  },
+  "devDependencies": {
+    "@types/node": "^20.0.0",
+    "electron": "^31.0.0",
+    "electron-builder": "^24.13.0",
+    "typescript": "^5.4.0"
+  },
+  "allowScripts": {
+    "electron@31.7.7": true
+  },
+  "license": "UNLICENSED",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/luc118i/bot_sr.git"
+  }
+}

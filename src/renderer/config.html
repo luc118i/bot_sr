@@ -1,0 +1,119 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8" />
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'" />
+  <title>Frequência Agent — Configuração</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: #f8fafc; color: #1e293b; font-size: 13px; }
+    .header { background: #1e293b; color: white; padding: 16px 24px; }
+    .header h1 { font-size: 15px; font-weight: 600; }
+    .header p { font-size: 11px; color: #94a3b8; margin-top: 2px; }
+    .content { padding: 20px 24px; }
+    .section { margin-bottom: 20px; }
+    .section-title { font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.05em; color: #64748b; margin-bottom: 10px; padding-bottom: 6px; border-bottom: 1px solid #e2e8f0; }
+    .field { margin-bottom: 12px; }
+    .field label { display: block; font-size: 12px; font-weight: 500; color: #374151; margin-bottom: 4px; }
+    .field-hint { font-size: 11px; color: #94a3b8; margin-top: 3px; }
+    input[type="text"] { width: 100%; padding: 7px 10px; border: 1px solid #d1d5db; border-radius: 6px; font-size: 12px; background: white; }
+    .file-row { display: flex; gap: 8px; align-items: center; }
+    .file-name { flex: 1; padding: 7px 10px; border: 1px dashed #cbd5e1; border-radius: 6px; font-size: 12px; color: #64748b; background: white; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    button { padding: 7px 14px; border-radius: 6px; font-size: 12px; font-weight: 500; cursor: pointer; border: 1px solid #d1d5db; background: white; color: #1e293b; }
+    button.primary { background: #1e293b; color: white; border-color: #1e293b; }
+    button:disabled { opacity: .5; cursor: default; }
+    .actions { display: flex; gap: 8px; justify-content: flex-end; padding: 14px 24px; border-top: 1px solid #e2e8f0; background: white; position: fixed; bottom: 0; left: 0; right: 0; }
+    .msg { margin-top: 10px; padding: 8px 10px; border-radius: 6px; font-size: 12px; display: none; white-space: pre-wrap; }
+    .msg.ok { display: block; background: #dcfce7; color: #166534; }
+    .msg.err { display: block; background: #fee2e2; color: #991b1b; }
+    code { background: #e2e8f0; padding: 1px 4px; border-radius: 3px; font-size: 11px; }
+  </style>
+</head>
+<body>
+  <div class="header">
+    <h1>Frequência Agent — Configuração</h1>
+    <p>Credencial do Google e qual planilha preencher. As regras (horários, tolerância, exceções) ficam nas abas CONFIG_* da planilha.</p>
+  </div>
+
+  <div class="content">
+    <div class="section">
+      <div class="section-title">Google</div>
+      <div class="field">
+        <label>Service Account (JSON)</label>
+        <div class="file-row">
+          <div class="file-name" id="saName">Nenhum arquivo selecionado</div>
+          <button id="btnPick">Selecionar...</button>
+        </div>
+        <div class="field-hint" id="saHint">A planilha precisa estar compartilhada como <b>Editor</b> com o e-mail da Service Account.</div>
+      </div>
+      <div class="field">
+        <label>Planilha de frequência (link ou ID)</label>
+        <input type="text" id="sheetId" placeholder="https://docs.google.com/spreadsheets/d/..." />
+      </div>
+      <button id="btnTest">Testar conexão</button>
+      <div class="msg" id="msg"></div>
+    </div>
+
+    <div class="section">
+      <div class="section-title">Abas de configuração</div>
+      <p style="font-size:12px;color:#475569;margin-bottom:8px">
+        Cria na planilha só as abas que faltarem (<code>CONFIG_GERAL</code>, <code>CONFIG_HORARIOS</code>,
+        <code>CONFIG_EXCECOES</code>, <code>CONFIG_APELIDOS</code>, <code>CONFIG_FERIADOS</code>), com cabeçalho e sem dados.
+        Nenhuma aba existente é alterada.
+      </p>
+      <button id="btnAbas">Criar abas de configuração</button>
+      <div class="msg" id="msgAbas"></div>
+    </div>
+  </div>
+
+  <div class="actions">
+    <button class="primary" id="btnSave">Salvar</button>
+  </div>
+
+  <script>
+    let sa = ''
+    const $ = id => document.getElementById(id)
+    const show = (el, ok, text) => { el.className = 'msg ' + (ok ? 'ok' : 'err'); el.textContent = text }
+    const current = () => ({ google_service_account_json_b64: sa, spreadsheet_id: $('sheetId').value.trim() })
+
+    window.agent.getConfig().then(cfg => {
+      if (!cfg) return
+      sa = cfg.google_service_account_json_b64 || ''
+      $('sheetId').value = cfg.spreadsheet_id || ''
+      if (sa) {
+        try { $('saName').textContent = 'Configurada — ' + JSON.parse(atob(sa)).client_email } catch { $('saName').textContent = 'Configurada' }
+      }
+    })
+
+    $('btnPick').onclick = async () => {
+      const r = await window.agent.pickJsonFile()
+      if (!r) return
+      sa = r.b64
+      $('saName').textContent = r.name + (r.email ? ' — ' + r.email : '')
+    }
+
+    $('btnTest').onclick = async () => {
+      $('btnTest').disabled = true
+      const r = await window.agent.testConnection(current())
+      show($('msg'), r.ok, r.message)
+      $('btnTest').disabled = false
+    }
+
+    $('btnSave').onclick = async () => {
+      await window.agent.saveConfig(current())
+      show($('msg'), true, 'Configuração salva.')
+    }
+
+    $('btnAbas').onclick = async () => {
+      if (!confirm('Criar na planilha as abas CONFIG_* que estiverem faltando?')) return
+      await window.agent.saveConfig(current())
+      $('btnAbas').disabled = true
+      const r = await window.agent.criarAbasConfig()
+      show($('msgAbas'), r.ok, r.ok
+        ? (r.criadas.length ? 'Criadas: ' + r.criadas.join(', ') + '.\nPreencha CONFIG_GERAL (tolerancia_min, entrada_padrao, horario_corte) antes de simular.' : 'Todas já existiam.')
+        : r.message)
+      $('btnAbas').disabled = false
+    }
+  </script>
+</body>
+</html>
