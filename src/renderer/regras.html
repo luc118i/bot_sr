@@ -249,8 +249,16 @@
       }
       for (const nome of Object.keys(TABELAS)) { dados[nome] = regras[nome]; render(nome) }
       $('dirty').textContent = ''
-      msgs([['ok', 'Salvo.'], ...(r.avisos.length ? [['warn', r.avisos.join('\n')]] : [])])
       window.scrollTo(0, 0)
+      // Salvou sem nada a observar → fecha sozinha. Com aviso (ex.: ADM que não
+      // existe na BASE DE DADOS), fica aberta pra pessoa ler antes de fechar.
+      if (!r.avisos.length) {
+        msgs([['ok', 'Salvo. Fechando...']])
+        setTimeout(() => window.close(), 700)
+        return
+      }
+      msgs([['ok', 'Salvo.'], ['warn', r.avisos.join('\n')]])
+      $('msgs').append(el('button', { textContent: 'Fechar', onclick: () => window.close() }))
     }
 
     window.addEventListener('beforeunload', e => { if (!$('btnSalvar').disabled) { e.preventDefault(); e.returnValue = '' } })
