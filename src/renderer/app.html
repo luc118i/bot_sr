@@ -19,6 +19,25 @@
     button.link { border: none; background: none; color: #475569; text-decoration: underline; padding: 4px 6px; }
     button:disabled { opacity: .45; cursor: default; }
     .atalhos { display: flex; gap: 6px; flex-wrap: wrap; justify-content: center; align-items: center; }
+    .acoes { display: flex; gap: 10px; align-items: flex-end; flex-wrap: wrap; justify-content: center; }
+    .data { display: flex; flex-direction: column; gap: 3px; font-size: 11px; font-weight: 600; color: #64748b; text-transform: uppercase; letter-spacing: .04em; }
+    .data input { font-size: 15px; padding: 9px 10px; border: 1px solid #cbd5e1; border-radius: 8px; color: #1e293b; font-family: inherit; }
+    button.secundario { background: white; color: #1e293b; border: 2px solid #1e293b; }
+    .progresso { background: white; border-bottom: 1px solid #e2e8f0; padding: 14px 24px; }
+    .progresso .topo { display: flex; gap: 10px; align-items: baseline; font-size: 13px; }
+    .progresso .topo span { color: #64748b; font-size: 12px; }
+    .barra { height: 8px; background: #e2e8f0; border-radius: 99px; overflow: hidden; margin: 8px 0 10px; }
+    .barra > div { height: 100%; width: 0; background: #1e293b; transition: width .25s; }
+    .barra.ok > div { background: #16a34a; }
+    .barra.falha > div { background: #b45309; }
+    #progDias { list-style: none; display: grid; gap: 4px; }
+    #progDias li { display: grid; grid-template-columns: 22px 150px 1fr; gap: 6px; font-size: 12px; align-items: baseline; }
+    #progDias li .ic { text-align: center; }
+    #progDias li .nome { font-weight: 600; }
+    #progDias li .det { color: #475569; }
+    #progDias li.erro .det { color: #b91c1c; }
+    #progDias li.pulado .det { color: #92400e; }
+    #progDias li.pronto .det { color: #166534; }
     .chk { font-size: 12px; color: #475569; display: flex; gap: 4px; align-items: center; }
     details.avancado { width: 100%; max-width: 760px; font-size: 12px; color: #475569; margin-top: 4px; }
     details.avancado > summary { cursor: pointer; text-align: center; }
@@ -53,14 +72,21 @@
 <body>
   <div class="header">
     <h1>Preencher frequência</h1>
-    <p>Busca o ponto dos últimos 7 dias e preenche a planilha. Nunca altera o que já está lançado, nunca marca falta sozinho; domingos e feriados (colunas ocultas) ficam em branco. Tudo pode ser desfeito.</p>
+    <p>Busca o ponto do dia (ou da semana) escolhido e preenche a planilha, dia por dia. Nunca altera o que já está lançado, nunca marca falta sozinho; domingos e feriados (colunas ocultas) ficam em branco. Tudo pode ser desfeito.</p>
   </div>
 
   <div class="hero">
-    <button class="primary grande" id="btnPreencher">Preencher frequência</button>
-    <div class="sub">últimos 7 dias · o dia de hoje só entra depois do horário de corte</div>
+    <div class="acoes">
+      <label class="data">
+        <span>Dia</span>
+        <input type="date" id="data" />
+      </label>
+      <button class="primary grande" id="btnDia">Preencher dia</button>
+      <button class="grande secundario" id="btnSemana">Conferir semana</button>
+    </div>
+    <div class="sub" id="subtitulo">segunda a sábado da semana do dia escolhido · o dia de hoje só entra depois do horário de corte</div>
     <div class="atalhos">
-      <button class="link" id="btnConferir" title="Mostra o que seria preenchido, sem gravar nada">Só conferir (não grava)</button>
+      <label class="chk" title="Mostra o que seria preenchido, sem gravar nada"><input type="checkbox" id="simular" /> simular (não grava)</label>
       <label class="chk" title="Inclui o dia de hoje mesmo antes do horário de corte"><input type="checkbox" id="forcar" /> incluir hoje antes do corte</label>
       <button class="link" id="btnRegras">Horários e regras</button>
       <button class="link" id="btnConfig">Configurações</button>
@@ -76,6 +102,15 @@
       </div>
     </details>
   </div>
+
+  <section id="progresso" class="progresso" hidden>
+    <div class="topo">
+      <b id="progTitulo">Preenchendo...</b>
+      <span id="progEtapa"></span>
+    </div>
+    <div class="barra"><div id="progBarra"></div></div>
+    <ul id="progDias"></ul>
+  </section>
 
   <main id="out"></main>
 
@@ -98,8 +133,67 @@
       return `${SEMANA[new Date(a, m - 1, d).getDay()]}, ${String(d).padStart(2, '0')}/${String(m).padStart(2, '0')}`
     }
     function ocupado(sim) {
-      for (const id of ['btnPreencher', 'btnConferir', 'btnSim']) $(id).disabled = sim
+      for (const id of ['btnDia', 'btnSemana', 'btnSim', 'data']) $(id).disabled = sim
     }
+
+    // Calendário sempre começa em hoje e não deixa escolher o futuro. Se o app
+    // ficar aberto de um dia pro outro, "hoje" é recalculado ao focar.
+    function hojeISO() {
+      const d = new Date()
+      return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+    }
+    $('data').value = hojeISO()
+    $('data').max = hojeISO()
+    $('data').onfocus = () => { $('data').max = hojeISO() }
+
+    // ── Progresso: uma linha por dia, atualizada a cada fase ──
+    const PESO_FASE = { espera: 0, ponto: 1, planilha: 2, conferido: 3, gravar: 3, pronto: 4, pulado: 4, erro: 4 }
+    const ICONE_FASE = { espera: '○', ponto: '⏳', planilha: '⏳', conferido: '⏳', gravar: '⏳', pronto: '✓', pulado: '–', erro: '✗' }
+    const ROTULO_FASE = { ponto: 'lendo o ponto', planilha: 'conferindo com a planilha', conferido: 'conferido', gravar: 'gravando na planilha', pronto: 'pronto', pulado: 'pulado', erro: 'erro' }
+    let prog = { gravando: true, dias: new Map() }
+
+    function atualizarBarra() {
+      let soma = 0
+      for (const d of prog.dias.values()) soma += PESO_FASE[d.fase] ?? 0
+      const max = prog.dias.size * 4
+      $('progBarra').style.width = (max ? Math.round((100 * soma) / max) : 0) + '%'
+    }
+
+    window.agent.onProgresso(ev => {
+      if (ev.tipo === 'inicio') {
+        prog = { gravando: ev.gravando, dias: new Map() }
+        $('progresso').hidden = false
+        $('progBarra').parentElement.className = 'barra'
+        $('progTitulo').textContent = ev.gravando ? `Preenchendo ${ev.datas.length} dia(s)...` : `Simulando ${ev.datas.length} dia(s) — nada será gravado...`
+        $('progEtapa').textContent = ''
+        $('progDias').replaceChildren(...ev.datas.map(data => {
+          const li = el('li', { className: 'espera' },
+            el('span', { className: 'ic', textContent: ICONE_FASE.espera }),
+            el('span', { className: 'nome', textContent: nomeDia(data) }),
+            el('span', { className: 'det', textContent: 'aguardando' }))
+          prog.dias.set(data, { li, fase: 'espera' })
+          return li
+        }))
+        return atualizarBarra()
+      }
+      if (ev.tipo === 'etapa') { $('progEtapa').textContent = ev.texto; return }
+      if (ev.tipo === 'fim') {
+        const problemas = [...prog.dias.values()].some(d => d.fase === 'erro')
+        $('progBarra').parentElement.className = 'barra ' + (problemas ? 'falha' : 'ok')
+        $('progBarra').style.width = '100%'
+        $('progTitulo').textContent = problemas ? 'Concluído com problemas — veja abaixo' : (prog.gravando ? 'Concluído' : 'Simulação concluída — nada foi gravado')
+        $('progEtapa').textContent = ''
+        return
+      }
+      const d = prog.dias.get(ev.data)
+      if (!d) return
+      d.fase = ev.fase
+      d.li.className = ev.fase
+      d.li.children[0].textContent = ICONE_FASE[ev.fase] ?? ''
+      d.li.children[2].textContent = ev.detalhe || ROTULO_FASE[ev.fase] || ''
+      $('progEtapa').textContent = `${nomeDia(ev.data)}: ${ROTULO_FASE[ev.fase] ?? ''}`
+      atualizarBarra()
+    })
 
     // Erro com atalho pra tela que resolve (login do ponto, conexão, regras).
     function mostrarErro(texto) {
@@ -109,18 +203,26 @@
       $('out').replaceChildren(box)
     }
 
-    async function preencher(apenasConferir) {
+    // modo 'dia' = só a data do calendário · 'semana' = segunda a sábado dela.
+    async function preencher(modo) {
+      const data = $('data').value
+      if (!data) return msg('err', 'Escolha um dia no calendário.')
+      if (data > hojeISO()) return msg('err', 'Não dá pra preencher um dia que ainda não aconteceu.')
+      const simular = $('simular').checked
       ocupado(true)
-      msg('info', apenasConferir ? 'Conferindo os últimos 7 dias no ponto... (nada será gravado)' : 'Buscando os últimos 7 dias no ponto e preenchendo a planilha...')
-      const r = await window.agent.preencher({ apenasConferir, forcar: $('forcar').checked })
+      $('out').replaceChildren()
+      const r = await window.agent.preencher({ data, modo, apenasConferir: simular, forcar: $('forcar').checked })
       ocupado(false)
-      if (!r.ok) return mostrarErro(r.message)
-      render(r.lote, apenasConferir ? 'conferir' : 'gravado')
+      if (!r.ok) {
+        $('progresso').hidden = true
+        return mostrarErro(r.message)
+      }
+      render(r.lote, simular ? 'conferir' : 'gravado')
       if (r.escrita) $('out').prepend(boxEscrita(r.escrita))
     }
 
-    $('btnPreencher').onclick = () => preencher(false)
-    $('btnConferir').onclick = () => preencher(true)
+    $('btnDia').onclick = () => preencher('dia')
+    $('btnSemana').onclick = () => preencher('semana')
     $('btnRel').onclick = () => window.agent.abrirRelatorios()
     $('btnRegras').onclick = () => window.agent.abrirRegras()
     $('btnConfig').onclick = () => window.agent.abrirConfig()
@@ -137,6 +239,7 @@
     $('btnSim').onclick = async () => {
       if (!htmlPaths.length) return msg('err', 'Escolha o(s) HTML(s) do ponto primeiro.')
       ocupado(true)
+      $('progresso').hidden = true
       msg('info', 'Lendo os arquivos e a planilha...')
       const r = await window.agent.simular({ htmlPaths, forcar: $('forcar').checked })
       ocupado(false)
@@ -191,7 +294,7 @@
       if (modo === 'conferir') {
         const total = lote.planos.reduce((n, p) => n + p.escritas.length, 0)
         const resumo = lote.planos.filter(p => p.escritas.length).map(p => `${nomeDia(p.data)}: ${p.escritas.length} célula(s)`).join('\n')
-        const box = el('div', { className: 'msg info', textContent: `Só conferência — nada foi gravado. ${total} célula(s) seriam preenchidas.` })
+        const box = el('div', { className: 'msg info', textContent: `Simulação — nada foi gravado. ${total} célula(s) seriam preenchidas.` })
         if (total) {
           const btn = el('button', { className: 'danger', textContent: `Gravar agora (${total})` })
           btn.onclick = () => gravarConferido(btn, resumo)

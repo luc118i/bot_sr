@@ -120,16 +120,10 @@
       <div class="msg" id="msg"></div>
     </div>
 
-    <div class="section">
-      <div class="section-title">Abas de configuração</div>
-      <p style="font-size:12px;color:#475569;margin-bottom:8px">
-        Cria na planilha só as abas que faltarem (<code>CONFIG_GERAL</code>, <code>CONFIG_HORARIOS</code>,
-        <code>CONFIG_EXCECOES</code>, <code>CONFIG_APELIDOS</code>), com cabeçalho e sem dados.
-        Nenhuma aba existente é alterada.
-      </p>
-      <button id="btnAbas">Criar abas de configuração</button>
-      <div class="msg" id="msgAbas"></div>
-    </div>
+    <p class="field-hint" style="margin-top:4px">
+      Na planilha o bot só lê as abas e preenche as células dos dias. Horários, tolerância,
+      exceções e apelidos ficam salvos nesta máquina (Horários e regras).
+    </p>
   </div>
 
   <div class="actions">
@@ -230,16 +224,6 @@
       show($(naAbaPonto ? 'msgPonto' : 'msg'), true, 'Configuração salva.')
     }
 
-    $('btnAbas').onclick = async () => {
-      if (!confirm('Criar na planilha as abas CONFIG_* que estiverem faltando?')) return
-      await window.agent.saveConfig(current())
-      $('btnAbas').disabled = true
-      const r = await window.agent.criarAbasConfig()
-      show($('msgAbas'), r.ok, r.ok
-        ? (r.criadas.length ? 'Criadas: ' + r.criadas.join(', ') + '.\nPreencha CONFIG_GERAL (tolerancia_min, entrada_padrao, horario_corte) antes de simular.' : 'Todas já existiam.')
-        : r.message)
-      $('btnAbas').disabled = false
-    }
   </script>
 </body>
 </html>

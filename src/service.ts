@@ -3,7 +3,7 @@ import path from 'path'
 import { getConfig, tipoConexao, type AgentConfig } from './config'
 import { AppsScriptGateway } from './sheets/appsScriptGateway'
 import { getRelatoriosDir, logger } from './logger'
-import { ABAS_CONFIG, CABECALHOS_CONFIG, parseConfigPlanilha, type OverridesGeral } from './core/configPlanilha'
+import type { OverridesGeral } from './core/configPlanilha'
 import { detectarLayout, nomeAbaDoMes } from './core/layoutMes'
 import { AntesDoCorteError, DiaNaoUtilError, montarPlano, type Plano } from './core/planner'
 import { pontoDizFeriado, registrosDaApi } from './core/pontoApi'
@@ -11,7 +11,7 @@ import { parsePontoHtml, type PontoRegistro } from './core/pontoParser'
 import { relatorioTexto, type ModoRelatorio } from './core/relatorio'
 import { diaDaSemana, hojeISO, parseDataISO, toISO } from './core/tempo'
 import { PontoAuthError, type FontePonto } from './ponto/secullum'
-import { lerColaboradores } from './regras'
+import { carregarConfigLocal, lerColaboradores } from './regras'
 import type { SheetGateway } from './sheets/gateway'
 import { GoogleSheetsGateway } from './sheets/googleSheets'
 import { XlsxGateway } from './sheets/xlsxGateway'
@@ -59,16 +59,6 @@ function conferirAno(titulo: string, ano: number): string | null {
   return anoTitulo && +anoTitulo !== ano ? `A planilha "${titulo}" é de ${anoTitulo}, mas a data pedida é de ${ano}.` : null
 }
 
-async function carregarConfig(gw: SheetGateway, overrides?: OverridesGeral) {
-  const [geral, horarios, excecoes, apelidos] = await Promise.all(Object.values(ABAS_CONFIG).map(a => gw.lerGrid(a)))
-  if (!geral && !(overrides?.entradaPadrao && overrides.toleranciaMin !== undefined)) {
-    throw new Error(`Aba ${ABAS_CONFIG.geral} não existe — abra "Horários e regras" e preencha entrada padrão, tolerância e horário de corte.`)
-  }
-  return parseConfigPlanilha(
-    { geral: geral ?? null, horarios: horarios ?? null, excecoes: excecoes ?? null, apelidos: apelidos ?? null },
-    overrides,
-  )
-}
 
 // Aba do mês + layout (com as colunas ocultas = dias não úteis).
 export async function carregarMes(gw: SheetGateway, abas: string[], ano: number, mes: number) {
@@ -111,12 +101,24 @@ export async function simularLote(gw: SheetGateway, op: OpcoesLote): Promise<Lot
   return planejarDias(gw, dias, { ...op, now }, lote)
 }
 
+// ── Andamento (barra de progresso da tela) ──────────────────────────────────
+// Cada dia passa por fases; a tela mostra uma linha por dia com a fase atual.
+//   ponto → planilha → conferido → gravar → pronto   (ou pulado / erro)
+export type FaseDia = 'ponto' | 'planilha' | 'conferido' | 'gravar' | 'pronto' | 'pulado' | 'erro'
+export type EventoProgresso =
+  | { tipo: 'inicio'; datas: string[]; gravando: boolean }
+  | { tipo: 'etapa'; texto: string }
+  | { tipo: 'dia'; data: string; fase: FaseDia; detalhe?: string }
+  | { tipo: 'fim' }
+export type OnProgresso = (e: EventoProgresso) => void
+
 export interface OpcoesPreencher {
-  dias?: number              // quantos dias pra trás, contando hoje (padrão 7)
-  apenasConferir?: boolean   // true = só a prévia, não grava
+  datas?: string[]           // dias a processar (padrão: os últimos 7 até hoje)
+  apenasConferir?: boolean   // true = simulação, não grava
   forcar?: boolean
   overrides?: OverridesGeral
   now?: Date
+  onProgresso?: OnProgresso
 }
 
 export interface ResultadoPreencher {
@@ -124,39 +126,68 @@ export interface ResultadoPreencher {
   escrita: { dias: EscritaDoDia[]; erro: string | null } | null
 }
 
-// O fluxo de um clique: busca no ponto os últimos N dias, planeja cada um e
-// grava direto o que for seguro (as mesmas proteções da prévia: só célula
-// vazia, nunca "F", tudo desfazível). Domingos nem são consultados no ponto.
+// O fluxo de um clique: busca no ponto os dias pedidos, confere cada um com a
+// planilha e grava direto o que for seguro (as mesmas proteções da prévia: só
+// célula vazia, nunca "F", tudo desfazível). Domingos nem são consultados.
 export async function preencherAutomatico(gw: SheetGateway, ponto: FontePonto, op: OpcoesPreencher = {}): Promise<ResultadoPreencher> {
   const now = op.now ?? new Date()
+  const prog: OnProgresso = op.onProgresso ?? (() => {})
   const lote: Lote = { geradoEm: now.toISOString(), planos: [], pulados: [], erros: [] }
-  const datas = ultimosDias(hojeISO(now), op.dias ?? 7)
-  logger.info(`[preencher] ${datas[0]} a ${datas.at(-1)} (${op.apenasConferir ? 'só conferir' : 'gravando'}) em ${gw.descricao}`)
+  const hoje = hojeISO(now)
+  const datas = [...new Set(op.datas ?? ultimosDias(hoje, 7))].sort()
+  logger.info(`[preencher] ${datas.join(', ')} (${op.apenasConferir ? 'simulação' : 'gravando'}) em ${gw.descricao}`)
+  prog({ tipo: 'inicio', datas, gravando: !op.apenasConferir })
 
+  const pular = (data: string, motivo: string) => {
+    lote.pulados.push({ data, arquivo: 'ponto', motivo })
+    prog({ tipo: 'dia', data, fase: 'pulado', detalhe: motivo })
+  }
+  const falhar = (data: string, motivo: string) => {
+    lote.erros.push({ data, arquivo: 'ponto', motivo })
+    prog({ tipo: 'dia', data, fase: 'erro', detalhe: motivo })
+  }
+
+  // 1. Ponto, dia por dia.
   const dias: DiaDePonto[] = []
   for (const data of datas) {
-    if (diaDaSemana(parseDataISO(data)) === 0) {
-      lote.pulados.push({ data, arquivo: 'ponto', motivo: `${data} é domingo — não se preenche.` })
-      continue
-    }
+    if (data > hoje) { falhar(data, 'Data no futuro.'); continue }
+    if (diaDaSemana(parseDataISO(data)) === 0) { pular(data, 'Domingo — não se preenche.'); continue }
+    prog({ tipo: 'dia', data, fase: 'ponto', detalhe: 'Lendo o ponto...' })
     try {
       const lista = await ponto.pontoDiario(data)
       const { registros, avisos } = registrosDaApi(lista)
-      if (!registros.length) {
-        lote.erros.push({ data, arquivo: 'ponto', motivo: 'O ponto não trouxe nenhum colaborador neste dia.' })
-        continue
-      }
+      if (!registros.length) { falhar(data, 'O ponto não trouxe nenhum colaborador neste dia.'); continue }
       dias.push({ data, arquivo: 'ponto', registros, avisos, feriadoNoPonto: pontoDizFeriado(lista) })
+      prog({ tipo: 'dia', data, fase: 'planilha', detalhe: `${registros.length} colaborador(es) no ponto — aguardando a planilha...` })
     } catch (err: any) {
       // Credencial errada vale pra todos os dias — para tudo com a mensagem clara.
-      if (err instanceof PontoAuthError) throw err
-      lote.erros.push({ data, arquivo: 'ponto', motivo: err.message })
+      if (err instanceof PontoAuthError) { prog({ tipo: 'fim' }); throw err }
+      falhar(data, err.message)
     }
   }
 
-  await planejarDias(gw, dias, { forcar: op.forcar, overrides: op.overrides, now }, lote)
-  if (op.apenasConferir) return { lote, escrita: null }
-  return { lote, escrita: await executarEscritaLote(gw, lote.planos) }
+  // 2. Planilha: confere cada dia.
+  await planejarDias(gw, dias, { forcar: op.forcar, overrides: op.overrides, now }, lote, prog)
+
+  // 3. Grava (ou só mostra, na simulação).
+  let escrita: ResultadoPreencher['escrita'] = null
+  if (op.apenasConferir) {
+    for (const p of lote.planos) {
+      prog({ tipo: 'dia', data: p.data, fase: 'pronto', detalhe: `Simulação: ${resumoDia(p)}` })
+    }
+  } else {
+    escrita = await executarEscritaLote(gw, lote.planos, prog)
+  }
+  prog({ tipo: 'fim' })
+  return { lote, escrita }
+}
+
+function resumoDia(p: Plano): string {
+  const partes = [`${p.escritas.length} a preencher`]
+  if (p.resumo.revisar) partes.push(`${p.resumo.revisar} p/ revisão`)
+  if (p.resumo.divergente) partes.push(`${p.resumo.divergente} diverge(m)`)
+  if (p.resumo.confere) partes.push(`${p.resumo.confere} já conferem`)
+  return partes.join(', ')
 }
 
 function ultimosDias(hoje: string, n: number): string[] {
@@ -167,21 +198,35 @@ function ultimosDias(hoje: string, n: number): string[] {
   })
 }
 
+/** Segunda a sábado da semana da data (domingo cai na semana que ele encerra). */
+export function semanaDe(data: string): string[] {
+  const d = parseDataISO(data)
+  const dow = diaDaSemana(d)                // 0 = domingo
+  const segunda = new Date(d.ano, d.mes - 1, d.dia - (dow === 0 ? 6 : dow - 1))
+  return Array.from({ length: 6 }, (_, i) => {
+    const x = new Date(segunda.getFullYear(), segunda.getMonth(), segunda.getDate() + i)
+    return toISO({ ano: x.getFullYear(), mes: x.getMonth() + 1, dia: x.getDate() })
+  })
+}
+
 // Um plano por dia. Configuração e BASE DE DADOS são lidas uma vez só; cada
 // mês, uma vez. Um dia com problema não impede os outros.
-async function planejarDias(gw: SheetGateway, entrada: DiaDePonto[], op: OpcoesPlanejar, lote: Lote): Promise<Lote> {
+async function planejarDias(gw: SheetGateway, entrada: DiaDePonto[], op: OpcoesPlanejar, lote: Lote, prog: OnProgresso = () => {}): Promise<Lote> {
   const dias = [...entrada].sort((a, b) => a.data.localeCompare(b.data))
   if (!dias.length) return lote
   logger.info(`[simular] ${dias.map(d => d.data).join(', ')} em ${gw.descricao}`)
 
+  prog({ tipo: 'etapa', texto: 'Lendo a planilha (abas, BASE DE DADOS)...' })
   const titulo = await gw.titulo()
   const abas = await gw.listarAbas()
-  const cfg = await carregarConfig(gw, op.overrides)
+  // Regras vêm do arquivo local (Horários e regras), nunca da planilha.
+  const cfg = carregarConfigLocal(op.overrides)
   // BASE DE DADOS só diferencia "tem na base mas sem linha no mês" de "não existe".
   const base = await lerColaboradores(gw, abas)
   const meses = new Map<string, Promise<Awaited<ReturnType<typeof carregarMes>>>>()
 
   for (const { data, arquivo, registros, avisos, feriadoNoPonto } of dias) {
+    prog({ tipo: 'dia', data, fase: 'planilha', detalhe: 'Conferindo com a planilha...' })
     try {
       const d = parseDataISO(data)
       const erroAno = conferirAno(titulo, d.ano)
@@ -195,10 +240,13 @@ async function planejarDias(gw: SheetGateway, entrada: DiaDePonto[], op: OpcoesP
         plano.avisos.unshift(`O ponto marca ${data} como feriado, mas a coluna do dia está visível na aba ${layout.aba} — se for feriado, esconda a coluna.`)
       }
       lote.planos.push(plano)
+      prog({ tipo: 'dia', data, fase: 'conferido', detalhe: `Aba ${plano.aba}, coluna do dia ${d.dia}: ${resumoDia(plano)}` })
       logger.info(`[simular] ${data}: ${registros.length} do ponto, resumo ${JSON.stringify(plano.resumo)}`)
     } catch (err: any) {
-      if (err instanceof DiaNaoUtilError || err instanceof AntesDoCorteError) lote.pulados.push({ data, arquivo, motivo: err.message })
+      const pulado = err instanceof DiaNaoUtilError || err instanceof AntesDoCorteError
+      if (pulado) lote.pulados.push({ data, arquivo, motivo: err.message })
       else lote.erros.push({ data, arquivo, motivo: err.message })
+      prog({ tipo: 'dia', data, fase: pulado ? 'pulado' : 'erro', detalhe: err.message })
     }
   }
   return lote
@@ -247,14 +295,29 @@ export interface EscritaDoDia extends ResultadoEscrita { data: string; aba: stri
 // Grava os dias em ordem. Se um falhar (rede, permissão), para ali e devolve os
 // que JÁ foram gravados junto com o erro — sem isso o Desfazer não saberia
 // quais células apagar dos dias anteriores.
-export async function executarEscritaLote(gw: SheetGateway, planos: Plano[]): Promise<{ dias: EscritaDoDia[]; erro: string | null }> {
+export async function executarEscritaLote(gw: SheetGateway, planos: Plano[], prog: OnProgresso = () => {}): Promise<{ dias: EscritaDoDia[]; erro: string | null }> {
   const dias: EscritaDoDia[] = []
-  for (const plano of planos) {
-    if (!plano.escritas.length) continue
+  for (let i = 0; i < planos.length; i++) {
+    const plano = planos[i]!
+    if (!plano.escritas.length) {
+      prog({ tipo: 'dia', data: plano.data, fase: 'pronto', detalhe: `Nada a preencher — ${resumoDia(plano)}` })
+      continue
+    }
+    prog({ tipo: 'dia', data: plano.data, fase: 'gravar', detalhe: `Gravando ${plano.escritas.length} célula(s) na aba ${plano.aba}...` })
     try {
-      dias.push({ data: plano.data, aba: plano.aba, plano, ...(await executarEscrita(gw, plano)) })
+      const r = await executarEscrita(gw, plano)
+      dias.push({ data: plano.data, aba: plano.aba, plano, ...r })
+      const extra = [
+        plano.resumo.revisar ? `${plano.resumo.revisar} p/ revisão` : '',
+        r.puladas.length ? `${r.puladas.length} já preenchida(s) por alguém` : '',
+      ].filter(Boolean).join(', ')
+      prog({ tipo: 'dia', data: plano.data, fase: 'pronto', detalhe: `${r.escritas.length} preenchida(s)${extra ? ' · ' + extra : ''}` })
     } catch (err: any) {
       logger.error(`[escrever] ${plano.data}: ${err.message}`)
+      prog({ tipo: 'dia', data: plano.data, fase: 'erro', detalhe: `Falhou ao gravar: ${err.message}` })
+      for (const resto of planos.slice(i + 1)) {
+        prog({ tipo: 'dia', data: resto.data, fase: 'erro', detalhe: 'Não gravado — a gravação parou no dia anterior.' })
+      }
       return { dias, erro: `Falhou ao gravar ${plano.data}: ${err.message}. Dias anteriores já gravados: ${dias.map(d => d.data).join(', ') || 'nenhum'}.` }
     }
   }
@@ -285,17 +348,6 @@ export async function desfazerEscrita(gw: SheetGateway, aba: string, escritas: R
   return { apagadas, mantidas }
 }
 
-export async function criarAbasConfig(gw: SheetGateway): Promise<string[]> {
-  const abas = await gw.listarAbas()
-  const criadas: string[] = []
-  for (const [k, nome] of Object.entries(ABAS_CONFIG) as [keyof typeof ABAS_CONFIG, string][]) {
-    if (abas.includes(nome)) continue
-    await gw.criarAba(nome, CABECALHOS_CONFIG[k])
-    criadas.push(nome)
-  }
-  logger.info(`[config] abas criadas: ${criadas.join(', ') || 'nenhuma'}`)
-  return criadas
-}
 
 export function salvarRelatorio(plano: Plano, modo: ModoRelatorio, extra?: ResultadoEscrita | ResultadoDesfazer): string {
   const dir = getRelatoriosDir()

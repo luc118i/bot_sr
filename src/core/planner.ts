@@ -83,7 +83,7 @@ export function validarData(data: string, cfg: ConfigPlanilha, now: Date, forcar
   if (data === hoje) {
     const corte = cfg.geral.horarioCorteMin
     const agora = now.getHours() * 60 + now.getMinutes()
-    if (corte === null) bloquear('É o dia de hoje e CONFIG_GERAL não tem "horario_corte" — não dá pra saber se o expediente acabou.')
+    if (corte === null) bloquear('É o dia de hoje e não há horário de corte em "Horários e regras" — não dá pra saber se o expediente acabou.')
     else if (agora < corte) bloquear(`Ainda são ${formatHora(agora)}; o dia só pode ser classificado depois de ${formatHora(corte)} (horario_corte).`)
   }
   return avisos
@@ -165,7 +165,7 @@ export function montarPlano(e: EntradaPlano): Plano {
       } else {
         it.situacao = 'nao_encontrado'
         it.motivo = m.sugestao
-          ? `Não achado. Possível: ADM ${m.sugestao.adm} "${m.sugestao.nome}" — se for, cadastre em CONFIG_APELIDOS`
+          ? `Não achado. Possível: ADM ${m.sugestao.adm} "${m.sugestao.nome}" — se for, cadastre em Horários e regras → Apelidos`
           : 'Nome não encontrado na aba do mês nem na BASE DE DADOS'
       }
       itens.push(it)
@@ -179,10 +179,10 @@ export function montarPlano(e: EntradaPlano): Plano {
 
     const forcado = codigoForcado(cfg, m.linha.adm, data)
     const dec = forcado
-      ? { codigo: forcado.codigoForcado, motivo: `Código forçado em CONFIG_EXCECOES linha ${forcado.linha}` }
+      ? { codigo: forcado.codigoForcado, motivo: `Código forçado por exceção do dia (item ${forcado.item})` }
       : decidir(reg, h)
     it.codigo = dec.codigo
-    it.motivo = (m.via === 'apelido' ? '[via CONFIG_APELIDOS] ' : '') + dec.motivo
+    it.motivo = (m.via === 'apelido' ? '[via apelido] ' : '') + dec.motivo
     classificar(it)
     itens.push(it)
     porLinha.set(m.linha.linha, [...(porLinha.get(m.linha.linha) ?? []), it])
@@ -206,7 +206,7 @@ export function montarPlano(e: EntradaPlano): Plano {
     const forcado = codigoForcado(cfg, l.adm, data)
     if (forcado) {
       it.codigo = forcado.codigoForcado
-      it.motivo = `Código forçado em CONFIG_EXCECOES linha ${forcado.linha} (não aparece no ponto)`
+      it.motivo = `Código forçado por exceção do dia (item ${forcado.item}; não aparece no ponto)`
       classificar(it)
     } else {
       // O ponto só lista a equipe de quem logou; a aba tem todos os setores.

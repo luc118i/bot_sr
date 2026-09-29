@@ -18,9 +18,6 @@ export interface SheetGateway {
   escrever(aba: string, valores: { celula: string; valor: string }[]): Promise<void>
   /** Deixa as células vazias (usado só pelo "Desfazer" de uma escrita do bot). */
   limpar(aba: string, celulas: string[]): Promise<void>
-  criarAba(nome: string, cabecalho: string[]): Promise<void>
-  /** Regrava a aba inteira a partir de A1 (cria se não existir). Só para as abas CONFIG_*. */
-  substituirTabela(aba: string, linhas: string[][]): Promise<void>
 }
 
 export function refAba(aba: string): string {

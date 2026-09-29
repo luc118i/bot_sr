@@ -27,6 +27,10 @@
     button.primary { background: #1e293b; color: white; border-color: #1e293b; }
     button.x { border: none; background: none; color: #94a3b8; font-size: 16px; padding: 0 4px; }
     button.x:hover { color: #b91c1c; }
+    .chips { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+    #setoresSel { display: contents; }
+    .chip { display: inline-flex; align-items: center; gap: 2px; background: #e2e8f0; color: #1e293b; border-radius: 99px; padding: 3px 4px 3px 10px; font-size: 12px; font-weight: 500; }
+    .chip.vazio-chip { background: none; border: 1px dashed #cbd5e1; color: #64748b; padding: 3px 10px; }
     button.add { margin-top: 8px; }
     button:disabled { opacity: .45; cursor: default; }
     .bar { position: fixed; left: 0; right: 0; bottom: 0; background: white; border-top: 1px solid #e2e8f0; padding: 10px 24px; display: flex; gap: 10px; align-items: center; }
@@ -41,11 +45,11 @@
 <body>
   <div class="header">
     <h1>Horários e regras</h1>
-    <p>Salvo nas abas CONFIG_* da planilha — vale para qualquer máquina que rodar o bot.</p>
+    <p>Salvo nesta máquina (arquivo regras.json) — a planilha de frequência não recebe nenhuma configuração.</p>
   </div>
 
   <main>
-    <div id="msgs"><div class="msg info">Carregando da planilha...</div></div>
+    <div id="msgs"><div class="msg info">Carregando...</div></div>
 
     <section>
       <h2>Padrão</h2>
@@ -62,7 +66,13 @@
       <h2>Horários individuais</h2>
       <p class="hint">Quem entra em horário diferente do padrão. Tolerância vazia = usa a padrão. Vigência vazia = sem limite; use datas para mudar o horário de alguém sem perder o histórico.</p>
       <div class="row" style="margin-bottom:8px">
-        <div class="field" style="width:260px"><label>Filtrar colaboradores por setor</label><select id="setor"></select></div>
+        <div class="field">
+          <label>Meus setores — filtra a lista de colaboradores (nenhum = todos)</label>
+          <div class="chips">
+            <span id="setoresSel"></span>
+            <select id="setorAdd" style="width:240px"></select>
+          </div>
+        </div>
       </div>
       <div id="t-horarios"></div>
     </section>
@@ -91,7 +101,7 @@
   <div class="bar">
     <span class="sp" id="dirty"></span>
     <button id="btnRecarregar">Recarregar</button>
-    <button class="primary" id="btnSalvar" disabled>Salvar na planilha</button>
+    <button class="primary" id="btnSalvar" disabled>Salvar</button>
   </div>
 
   <script>
@@ -108,7 +118,7 @@
         ['codigo', 'Código', 'codigo', 90], ['obs', 'Obs.', 'text']],
       apelidos: [['nome_no_ponto', 'Nome no ponto', 'text', 320], ['adm', 'Colaborador na planilha', 'colab', 320], ['obs', 'Obs.', 'text']],
     }
-    // Campos que a tela não mostra mas precisam voltar pra planilha intactos.
+    // Campos que a tela não mostra mas precisam ser salvos intactos.
     const OCULTOS = { horarios: ['saida'] }
     const dados = { horarios: [], excecoes: [], apelidos: [] }
 
@@ -156,10 +166,33 @@
     }
 
     function preencherColabs() {
-      const setor = $('setor').value
       $('colabs').replaceChildren(...colaboradores
-        .filter(c => c.ativo && (!setor || c.setor === setor))
+        .filter(c => c.ativo && (!setoresSel.length || setoresSel.includes(c.setor)))
         .map(c => el('option', { value: `${c.adm} — ${c.nome}`, label: c.setor })))
+    }
+
+    // Setores escolhidos viram etiquetas com ×; o seletor só oferece os que faltam.
+    let setoresSel = []
+    let todosSetores = []
+    function renderSetores() {
+      $('setoresSel').replaceChildren(...(setoresSel.length
+        ? setoresSel.map(s => el('span', { className: 'chip' }, s,
+            el('button', { className: 'x', textContent: '×', title: 'Remover setor', onclick: () => {
+              setoresSel = setoresSel.filter(x => x !== s)
+              renderSetores(); preencherColabs(); marcar()
+            } })))
+        : [el('span', { className: 'chip vazio-chip', textContent: 'Todos os setores' })]))
+      const restantes = todosSetores.filter(s => !setoresSel.includes(s))
+      $('setorAdd').replaceChildren(
+        el('option', { value: '', textContent: restantes.length ? '+ adicionar setor' : 'todos já adicionados' }),
+        ...restantes.map(s => el('option', { value: s, textContent: s })))
+      $('setorAdd').disabled = !restantes.length
+    }
+    $('setorAdd').onchange = () => {
+      const s = $('setorAdd').value
+      if (!s) return
+      setoresSel = [...setoresSel, s].sort()
+      renderSetores(); preencherColabs(); marcar()
     }
 
     async function carregar() {
@@ -169,9 +202,10 @@
       colaboradores = r.colaboradores
       porAdm.clear(); for (const c of colaboradores) porAdm.set(c.adm, c)
 
-      const setores = [...new Set(colaboradores.filter(c => c.ativo).map(c => c.setor).filter(Boolean))].sort()
-      $('setor').replaceChildren(el('option', { value: '', textContent: 'Todos os setores' }), ...setores.map(s => el('option', { value: s, textContent: s })))
-      $('setor').onchange = preencherColabs
+      setoresSel = [...(r.regras.setores || [])].sort()
+      // Um setor salvo que sumiu da BASE DE DADOS continua aparecendo pra poder ser removido.
+      todosSetores = [...new Set([...colaboradores.filter(c => c.ativo).map(c => c.setor).filter(Boolean), ...setoresSel])].sort()
+      renderSetores()
       preencherColabs()
 
       for (const k of ['entrada_padrao', 'tolerancia_min', 'horario_corte']) {
@@ -180,14 +214,15 @@
       }
       for (const nome of Object.keys(TABELAS)) { dados[nome] = r.regras[nome]; render(nome) }
 
-      $('feriados').replaceChildren(...r.feriados.map(f => el('div', {
+      if (!r.feriados.length) $('feriados').textContent = 'Planilha não conectada — configure a conexão para ver os feriados.'
+      else $('feriados').replaceChildren(...r.feriados.map(f => el('div', {
         textContent: f.erro ? `${f.aba}: não deu pra ler (${f.erro})`
           : `${f.aba}: ${f.dias.length ? f.dias.map(d => 'dia ' + d).join(', ') : 'nenhum feriado (só domingos ocultos)'}`,
       })))
 
       $('dirty').textContent = ''
       msgs([
-        ...(r.abasFaltando.length ? [['info', `As abas ${r.abasFaltando.join(', ')} ainda não existem — serão criadas ao salvar.`]] : []),
+        ['info', `Salvo em: ${r.arquivo}`],
         ...r.avisos.map(a => ['warn', a]),
       ])
     }
@@ -201,6 +236,7 @@
       const vazia = l => Object.values(l).every(v => !String(v || '').trim())
       const regras = {
         geral: { entrada_padrao: $('entrada_padrao').value, tolerancia_min: $('tolerancia_min').value, horario_corte: $('horario_corte').value },
+        setores: setoresSel,
       }
       for (const nome of Object.keys(TABELAS)) regras[nome] = dados[nome].filter(l => !vazia(l))
       $('btnSalvar').disabled = true
@@ -213,7 +249,7 @@
       }
       for (const nome of Object.keys(TABELAS)) { dados[nome] = regras[nome]; render(nome) }
       $('dirty').textContent = ''
-      msgs([['ok', 'Salvo na planilha.'], ...(r.avisos.length ? [['warn', r.avisos.join('\n')]] : [])])
+      msgs([['ok', 'Salvo.'], ...(r.avisos.length ? [['warn', r.avisos.join('\n')]] : [])])
       window.scrollTo(0, 0)
     }
 

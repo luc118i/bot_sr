@@ -9,11 +9,11 @@ import { validarData } from './planner'
 import { colunaA1, parseDataPlanilha, parseHora } from './tempo'
 import { normalize } from './normalize'
 import type { SheetGateway } from '../sheets/gateway'
-import { desfazerEscrita, executarEscrita, executarEscritaLote, preencherAutomatico, simular, simularLote } from '../service'
+import { desfazerEscrita, executarEscrita, executarEscritaLote, preencherAutomatico, semanaDe, simular, simularLote } from '../service'
 import { registrosDaApi } from './pontoApi'
 import { PontoAuthError } from '../ponto/secullum'
-import { carregarRegras, salvarRegras, validarRegras } from '../regras'
-import { AppsScriptGateway } from '../sheets/appsScriptGateway'
+import { carregarRegras, salvarRegras, validarRegras, type RegrasEditaveis } from '../regras'
+import { AppsScriptGateway, explicarPaginaDoGoogle } from '../sheets/appsScriptGateway'
 
 const FIXTURE = path.resolve(__dirname, '..', '..', 'test', 'fixtures', 'ponto-sintetico.html')
 const LETRAS = ['D', 'S', 'T', 'Q', 'Q', 'S', 'S']
@@ -64,8 +64,6 @@ class MemoryGateway implements SheetGateway {
   }
   ocultas: Record<string, Set<number>> = {}
   async colunasOcultas(aba: string) { return this.ocultas[aba] ?? new Set<number>() }
-  async criarAba() {}
-  async substituirTabela(aba: string, linhas: string[][]) { this.abas[aba] = linhas.map(l => [...l]) }
 }
 
 // ── utilitários ─────────────────────────────────────────────────────────────
@@ -182,6 +180,30 @@ test('layout: coluna oculta vira dia não útil; domingo é não útil mesmo vis
 
 // ── fluxo completo (simular + escrever) ─────────────────────────────────────
 
+// Regras ficam num arquivo local (regras.json); nos testes, num temporário.
+const REGRAS_TMP = path.join(fs.mkdtempSync(path.join(require('os').tmpdir(), 'freq-regras-')), 'regras.json')
+process.env['REGRAS_PATH'] = REGRAS_TMP
+
+// As mesmas regras de CFG_GRIDS, no formato da tela/arquivo.
+function regrasCenario(): RegrasEditaveis {
+  return {
+    geral: { tolerancia_min: '5', entrada_padrao: '08:00', horario_corte: '18:00' },
+    horarios: [
+      { adm: '76', entrada: '07:00', saida: '', tolerancia_min: '', vigencia_inicio: '', vigencia_fim: '2026-09-15', obs: '' },
+      { adm: '76', entrada: '07:30', saida: '', tolerancia_min: '10', vigencia_inicio: '2026-09-16', vigencia_fim: '', obs: '' },
+    ],
+    excecoes: [
+      { data: '2026-09-28', adm: '771', entrada_prevista: '10:00', codigo: '', obs: 'avisou' },
+      { data: '2026-09-28', adm: '143', entrada_prevista: '', codigo: 'AT', obs: '' },
+    ],
+    apelidos: [],
+  }
+}
+
+function definirRegras(r: RegrasEditaveis) {
+  fs.writeFileSync(REGRAS_TMP, JSON.stringify(r, null, 2))
+}
+
 function cenario() {
   const setembro = gridMes(2026, 9, [
     ['374', 'JOAO EXEMPLO DA SILVA'],                          // 07:58 → .
@@ -197,7 +219,8 @@ function cenario() {
   ])
   const outubro = gridMes(2026, 10, [['374', 'JOAO EXEMPLO DA SILVA']])
   const base = [['Nº', 'ADM', 'Colaborador'], ['1', '9999', 'FELIPE SEMLINHA DE FARIA']]
-  const gw = new MemoryGateway({ 'BASE DE DADOS': base, Setembro: setembro, Outubro: outubro, CONFIG_GERAL: CFG_GRIDS.geral, CONFIG_HORARIOS: CFG_GRIDS.horarios, CONFIG_EXCECOES: CFG_GRIDS.excecoes, CONFIG_APELIDOS: CFG_GRIDS.apelidos })
+  const gw = new MemoryGateway({ 'BASE DE DADOS': base, Setembro: setembro, Outubro: outubro })
+  definirRegras(regrasCenario())
   // Como na planilha real: domingos e o feriado de 7/09 com a coluna oculta
   // (dia d fica na coluna 6 + d).
   gw.ocultas['Setembro'] = new Set([6, 7, 13, 20, 27].map(d => 6 + d))
@@ -221,7 +244,7 @@ test('simulação classifica cada caso do plano e nunca decide falta', async () 
   assert.equal(por('PAULO MODELO DA SILVA').situacao, 'revisar')
   assert.equal(por('ANDRE JOSE DE EXEMPLO').situacao, 'confere')
   assert.equal(por('RAIMUNDO DAS NEVES PRADO DOS SANTOS').situacao, 'nao_encontrado')
-  assert.match(por('RAIMUNDO DAS NEVES PRADO DOS SANTOS').motivo, /ADM 1417.*CONFIG_APELIDOS/)
+  assert.match(por('RAIMUNDO DAS NEVES PRADO DOS SANTOS').motivo, /ADM 1417.*Apelidos/)
   assert.equal(por('FELIPE SEMLINHA DE FARIA').situacao, 'sem_linha_no_mes')
   assert.equal(por('LUIZ EXCECAO OLIVEIRA').situacao, 'divergente')
   assert.equal(por('SERGIO ATESTADO QUEIROZ').situacao, 'ausente_no_ponto')
@@ -231,7 +254,7 @@ test('simulação classifica cada caso do plano e nunca decide falta', async () 
 
 test('apelido resolve nome truncado', async () => {
   const gw = cenario()
-  gw.abas['CONFIG_APELIDOS'] = [['nome_no_ponto', 'adm'], ['Raimundo das Neves Prado dos Santos', '1417']]
+  definirRegras({ ...regrasCenario(), apelidos: [{ nome_no_ponto: 'Raimundo das Neves Prado dos Santos', adm: '1417', obs: '' }] })
   const plano = await simular(gw, { data: '2026-09-28', html: fs.readFileSync(FIXTURE, 'utf-8'), now: NOITE })
   assert.ok(plano.escritas.some(e => e.celula === 'AH13' && e.codigo === '.'))
 })
@@ -267,42 +290,58 @@ test('recusa planilha de outro ano', async () => {
 
 // ── tela "Horários e regras" ────────────────────────────────────────────────
 
-test('regras: salva na planilha e a simulação passa a usar o horário individual', async () => {
+test('regras: salvam no arquivo local, nunca na planilha, e a simulação passa a usar', async () => {
   const gw = cenario()
-  const { regras } = await carregarRegras(gw)
+  const planilhaAntes = preenchidas(gw)
+  const abasAntes = await gw.listarAbas()
+  const { regras, arquivo } = await carregarRegras(gw)
+  assert.equal(arquivo, REGRAS_TMP)
   assert.equal(regras.geral.entrada_padrao, '08:00')
-  assert.equal(regras.excecoes[0]!.data, '2026-09-28') // dd/mm/aaaa da planilha → ISO na tela
 
   regras.horarios.push({ adm: '2376', entrada: '09:00', saida: '', tolerancia_min: '', vigencia_inicio: '2026-09-01', vigencia_fim: '', obs: 'entra 9h' })
-  const v = await salvarRegras(gw, regras)
+  const v = await salvarRegras(regras, gw)
   assert.deepEqual(v.erros, [])
-  assert.deepEqual(gw.abas['CONFIG_HORARIOS']!.at(-1), ['2376', '09:00', '', '', '01/09/2026', '', 'entra 9h'])
+  assert.deepEqual(JSON.parse(fs.readFileSync(REGRAS_TMP, 'utf-8')).horarios.at(-1).obs, 'entra 9h')
+  assert.ok(fs.existsSync(REGRAS_TMP.replace(/\.json$/, '.anterior.json'))) // cópia da versão anterior
+  assert.deepEqual(await gw.listarAbas(), abasAntes)
+  assert.deepEqual(preenchidas(gw), planilhaAntes)
 
   const plano = await simular(gw, { data: '2026-09-28', html: fs.readFileSync(FIXTURE, 'utf-8'), now: NOITE })
   const pedro = plano.itens.find(i => i.adm === '2376')!
   assert.equal(pedro.horario!.previsto, '09:00')
-  assert.match(pedro.horario!.origem, /CONFIG_HORARIOS/)
+  assert.match(pedro.horario!.origem, /horário individual/)
 })
 
-test('regras: bloqueia salvamento inválido e não toca na planilha', async () => {
+test('regras: bloqueia salvamento inválido e o arquivo fica como estava', async () => {
   const gw = cenario()
-  const antes = JSON.stringify(gw.abas['CONFIG_HORARIOS'])
+  const antes = fs.readFileSync(REGRAS_TMP, 'utf-8')
   const { regras } = await carregarRegras(gw)
 
   regras.excecoes.push({ data: '2026-09-30', adm: '374', entrada_prevista: '', codigo: 'XX', obs: '' })
-  let v = await salvarRegras(gw, regras)
+  let v = await salvarRegras(regras, gw)
   assert.match(v.erros.join('\n'), /código "XX"/)
 
   regras.excecoes.pop()
   regras.horarios.push({ adm: '76', entrada: '06:00', saida: '', tolerancia_min: '', vigencia_inicio: '2026-09-20', vigencia_fim: '', obs: '' })
-  v = await salvarRegras(gw, regras)
+  v = await salvarRegras(regras, gw)
   assert.match(v.erros.join('\n'), /ADM 76: dois horários/)
 
   regras.horarios.pop()
   regras.geral.entrada_padrao = ''
-  v = await salvarRegras(gw, regras)
-  assert.match(v.erros.join('\n'), /entrada_padrao/)
-  assert.equal(JSON.stringify(gw.abas['CONFIG_HORARIOS']), antes)
+  v = await salvarRegras(regras, gw)
+  assert.match(v.erros.join('\n'), /entrada padrão/)
+  assert.equal(fs.readFileSync(REGRAS_TMP, 'utf-8'), antes)
+})
+
+test('regras: tela abre sem planilha configurada; simulação sem regras explica o que fazer', async () => {
+  definirRegras(regrasCenario())
+  const r = await carregarRegras(null)
+  assert.equal(r.regras.geral.entrada_padrao, '08:00')
+  assert.deepEqual(r.colaboradores, [])
+
+  const gw = cenario()
+  fs.rmSync(REGRAS_TMP)
+  await assert.rejects(simular(gw, { data: '2026-09-28', html: fs.readFileSync(FIXTURE, 'utf-8'), now: NOITE }), /Horários e regras/)
 })
 
 test('regras: avisa ADM que não existe na BASE DE DADOS', () => {
@@ -503,4 +542,73 @@ test('um clique: feriado no ponto com coluna visível vira aviso; senha errada p
 
   const semAcesso = { pontoDiario: async () => { throw new PontoAuthError('Número ou senha do ponto inválidos.') } }
   await assert.rejects(preencherAutomatico(gw, semAcesso, { now: new Date(2026, 8, 30, 19, 0) }), /senha do ponto/)
+})
+
+test('Apps Script: traduz a página de erro do Google numa instrução', () => {
+  const pagina = '<html><head><title>Erro</title><script>var x="TypeError(...)"</script></head><body><div>Erro</div><div>Função de script não encontrada: doPost</div></body></html>'
+  assert.match(explicarPaginaDoGoogle(pagina, 200), /Função de script não encontrada: doPost.*Nova versão/)
+  assert.match(explicarPaginaDoGoogle('<html>Fazer login</html>', 200, 'https://accounts.google.com/x'), /Qualquer pessoa/)
+})
+
+// ── dia / semana e andamento ────────────────────────────────────────────────
+
+test('semanaDe: segunda a sábado da semana da data (domingo encerra a semana anterior)', () => {
+  assert.deepEqual(semanaDe('2026-09-30'), ['2026-09-28', '2026-09-29', '2026-09-30', '2026-10-01', '2026-10-02', '2026-10-03'])
+  assert.deepEqual(semanaDe('2026-09-27'), ['2026-09-21', '2026-09-22', '2026-09-23', '2026-09-24', '2026-09-25', '2026-09-26'])
+  assert.equal(semanaDe('2026-09-28')[0], '2026-09-28')
+})
+
+test('semana: cada dia vai pra SUA coluna com o ponto DAQUELE dia', async () => {
+  const gw = cenario()
+  // JOAO chega em horários diferentes a cada dia; o resto não muda.
+  const entradaJoao: Record<string, string> = {
+    '2026-09-21': '07:55', '2026-09-22': '08:20', '2026-09-23': '08:05',
+    '2026-09-24': '09:00', '2026-09-25': '07:59', '2026-09-26': '08:06',
+  }
+  const ponto = {
+    pontoDiario: async (data: string) => listaApi().map(l =>
+      l.funcionarioNome === 'JOAO EXEMPLO DA SILVA' ? { ...l, batidas: [{ valor: entradaJoao[data]! }] } : l),
+  }
+  const r = await preencherAutomatico(gw, ponto, { datas: semanaDe('2026-09-24'), now: new Date(2026, 8, 30, 19, 0) })
+  assert.equal(r.escrita!.erro, null)
+  // Linha 8 = JOAO; dia d fica na coluna 6 + d (índice 5 + d).
+  const joao = (dia: number) => gw.abas['Setembro']![7]![5 + dia]
+  assert.deepEqual([21, 22, 23, 24, 25, 26].map(joao), ['.', 'P', '.', 'P', '.', 'P'])
+  // E nenhum outro dia do mês foi tocado nessa linha.
+  assert.ok([...Array(31).keys()].map(i => i + 1).filter(d => d < 21 || d > 26).every(d => !joao(d)))
+})
+
+test('andamento: cada dia passa pelas fases em ordem e o total fecha', async () => {
+  const gw = cenario()
+  const eventos: any[] = []
+  await preencherAutomatico(gw, { pontoDiario: async () => listaApi() }, {
+    datas: ['2026-09-26', '2026-09-27', '2026-09-28'], now: new Date(2026, 8, 30, 19, 0), onProgresso: e => eventos.push(e),
+  })
+  assert.deepEqual(eventos[0], { tipo: 'inicio', datas: ['2026-09-26', '2026-09-27', '2026-09-28'], gravando: true })
+  assert.deepEqual(eventos.at(-1), { tipo: 'fim' })
+  const fases = (data: string) => eventos.filter(e => e.tipo === 'dia' && e.data === data).map(e => e.fase)
+  assert.deepEqual(fases('2026-09-27'), ['pulado']) // domingo
+  assert.deepEqual(fases('2026-09-28'), ['ponto', 'planilha', 'planilha', 'conferido', 'gravar', 'pronto'])
+  assert.equal(eventos.filter(e => e.tipo === 'dia' && e.data === '2026-09-28').at(-1).fase, 'pronto')
+})
+
+test('andamento em simulação: termina em "pronto" sem passar por "gravar"', async () => {
+  const gw = cenario()
+  const eventos: any[] = []
+  await preencherAutomatico(gw, { pontoDiario: async () => listaApi() }, {
+    datas: ['2026-09-28'], apenasConferir: true, now: new Date(2026, 8, 30, 19, 0), onProgresso: e => eventos.push(e),
+  })
+  const fases = eventos.filter(e => e.tipo === 'dia').map(e => e.fase)
+  assert.ok(!fases.includes('gravar'))
+  assert.equal(fases.at(-1), 'pronto')
+  assert.equal(eventos[0].gravando, false)
+})
+
+test('regras: setores escolhidos são salvos no arquivo local e voltam ao abrir', async () => {
+  const gw = cenario()
+  const { regras } = await carregarRegras(gw)
+  assert.deepEqual(regras.setores, []) // arquivo antigo, sem setores = todos
+  regras.setores = ['Guará - Pisos', 'Distribuição']
+  assert.deepEqual((await salvarRegras(regras, gw)).erros, [])
+  assert.deepEqual((await carregarRegras(gw)).regras.setores, ['Guará - Pisos', 'Distribuição'])
 })

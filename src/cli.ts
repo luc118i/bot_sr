@@ -3,7 +3,7 @@ import path from 'path'
 import readline from 'readline'
 import type { Plano } from './core/planner'
 import { relatorioTexto } from './core/relatorio'
-import { abrirGateway, criarAbasConfig, desfazerEscrita, executarEscrita, salvarRelatorio, simularLote, type ResultadoEscrita } from './service'
+import { abrirGateway, desfazerEscrita, executarEscrita, salvarRelatorio, simularLote, type ResultadoEscrita } from './service'
 
 const AJUDA = `
 Uso:
@@ -11,7 +11,6 @@ Uso:
                             [--entrada-padrao 08:00 --tolerancia 5] [--forcar]
   node dist/cli.js escrever --plano relatorios/<arquivo>.json
   node dist/cli.js desfazer --escrita relatorios/<data>_escrita_<hora>.json
-  node dist/cli.js criar-abas-config
 
   simular            Gera o relatório do que SERIA escrito (nada é gravado), um por
                      dia — a data vem de dentro de cada HTML; domingos e colunas
@@ -22,9 +21,10 @@ Uso:
                      Relê cada célula antes e pula as que alguém preencheu.
   desfazer           Apaga as células de uma escrita que ainda tiverem o código
                      gravado pelo bot (o que alguém mudou depois fica).
-  criar-abas-config  Cria na planilha as abas CONFIG_* que faltarem (só cabeçalho).
 
   --config caminho   config.json alternativo (padrão: ./config.json)
+  Regras (horários, tolerância...): ./regras.json, o mesmo formato que a tela
+  "Horários e regras" do app grava; ou --entrada-padrao/--tolerancia.
 `
 
 // --html pode repetir (um arquivo por dia); os demais valem a última ocorrência.
@@ -105,12 +105,6 @@ async function main() {
     console.log(`Apagadas: ${r.apagadas.join(', ') || '(nenhuma)'}`)
     for (const m of r.mantidas) console.log(`  Mantida ${m.celula}: bot "${m.escritoPeloBot}" → agora "${m.valorEncontrado}"`)
     salvarRelatorio(plano, 'desfeita', r)
-    return
-  }
-
-  if (cmd === 'criar-abas-config') {
-    const criadas = await criarAbasConfig(abrirGateway())
-    console.log(criadas.length ? `Abas criadas: ${criadas.join(', ')}` : 'Todas as abas CONFIG_* já existem.')
     return
   }
 

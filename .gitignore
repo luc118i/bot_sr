@@ -11,6 +11,8 @@ config.json
 
 # Dados gerados em execução
 relatorios/
+regras.json
+regras.anterior.json
 logs/
 *.log
 

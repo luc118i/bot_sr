@@ -1,6 +1,6 @@
 // Legenda da planilha de frequência (colunas AX/AY das abas de mês).
 // O bot só ESCREVE '.', 'P' e 'FE' por conta própria; os demais só entram via
-// código forçado em CONFIG_EXCECOES. 'F' nunca é decidido sozinho.
+// código forçado numa exceção do dia (Horários e regras). 'F' nunca é decidido sozinho.
 export const CODIGOS = {
   '.': 'Presença pontual',
   P: 'Presença com atraso',

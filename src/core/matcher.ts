@@ -4,7 +4,7 @@ import type { LinhaColaborador } from './layoutMes'
 
 // Nome do ponto → linha da aba do mês. O ADM é a chave estável (o nome na aba
 // do mês vem por XLOOKUP a partir dele); o ponto só traz nome, então o caminho
-// é: CONFIG_APELIDOS (se houver) → nome normalizado na aba do mês.
+// é: apelidos das regras (se houver) → nome normalizado na aba do mês.
 // Os dois erros já conhecidos:
 //   - nome truncado na base ("RAIMUNDO DAS NEVES PRADO DOS") → vira SUGESTÃO
 //     de apelido no relatório, nunca match automático;
@@ -63,7 +63,7 @@ export class Matcher {
   }
 
   // Um nome é prefixo do outro (truncado na base ou no ponto) e só existe um
-  // candidato assim. Só aparece no relatório como sugestão pra CONFIG_APELIDOS.
+  // candidato assim. Só aparece no relatório como sugestão de apelido.
   private sugerir(n: string): LinhaColaborador | null {
     const cands = this.linhas.filter(l => {
       const ln = normalize(l.nome)

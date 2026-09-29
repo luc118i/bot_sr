@@ -9,10 +9,11 @@ import { getLogsDir, getRelatoriosDir, logger } from './logger'
 import type { Plano } from './core/planner'
 import { extrairSpreadsheetId } from './sheets/googleSheets'
 import {
-  abrirGateway, criarAbasConfig, desfazerEscrita, executarEscritaLote, gatewayDaConfig, preencherAutomatico, salvarRelatorio, simularLote,
+  abrirGateway, desfazerEscrita, executarEscritaLote, gatewayDaConfig, preencherAutomatico, salvarRelatorio, semanaDe, simularLote,
   type EscritaDoDia, type Lote, type ResultadoDesfazer, type ResultadoEscrita,
 } from './service'
 import { carregarRegras, salvarRegras, type RegrasEditaveis } from './regras'
+import type { SheetGateway } from './sheets/gateway'
 
 let tray: Tray | null = null
 let configWin: BrowserWindow | null = null
@@ -115,6 +116,11 @@ function openRegrasWindow(): void {
   regrasWin.on('closed', () => { regrasWin = null })
 }
 
+// Planilha se estiver configurada; null se ainda não (tela de regras funciona sem).
+function gatewayOpcional(): SheetGateway | null {
+  try { return abrirGateway() } catch { return null }
+}
+
 function registerIPC(): void {
   // Já com os segredos decifrados — a tela de Configurações mostra/edita.
   ipcMain.handle('get-config', () => {
@@ -130,17 +136,22 @@ function registerIPC(): void {
     }
   })
 
-  // O fluxo de um clique: busca os últimos 7 dias no ponto e grava. Com
-  // apenasConferir, só monta a prévia — "Gravar agora" aplica essa prévia
-  // pelo mesmo caminho do 'escrever'.
-  ipcMain.handle('preencher', async (_e, params: { apenasConferir?: boolean; forcar?: boolean }) => {
+  // O fluxo de um clique: o dia escolhido no calendário, ou a semana dele
+  // (segunda a sábado, só até hoje). O andamento vai pra tela a cada fase de
+  // cada dia (evento 'progresso'). Com apenasConferir, só monta a prévia —
+  // "Gravar agora" aplica essa prévia pelo mesmo caminho do 'escrever'.
+  ipcMain.handle('preencher', async (e, params: { data: string; modo: 'dia' | 'semana'; apenasConferir?: boolean; forcar?: boolean }) => {
     ultimoLote = null
     try {
+      const hoje = hojeISO()
+      if (!params.data || params.data > hoje) throw new Error('Escolha no calendário uma data de hoje ou anterior.')
+      const datas = params.modo === 'semana' ? semanaDe(params.data).filter(d => d <= hoje) : [params.data]
       const cfg = getConfig()
       const r = await preencherAutomatico(abrirGateway(), new SecullumClient(credenciaisPonto(cfg)), {
-        dias: 7,
+        datas,
         apenasConferir: !!params.apenasConferir,
         forcar: !!params.forcar,
+        onProgresso: ev => { if (!e.sender.isDestroyed()) e.sender.send('progresso', ev) },
       })
       if (r.escrita) {
         for (const d of r.escrita.dias) salvarRelatorio(d.plano, 'escrita', { escritas: d.escritas, puladas: d.puladas })
@@ -183,25 +194,12 @@ function registerIPC(): void {
       const gw = gatewayDaConfig({ ...cfg, spreadsheet_id: extrairSpreadsheetId(cfg.spreadsheet_id ?? '') })
       const titulo = await gw.titulo()
       const abas = await gw.listarAbas()
-      const faltando = ['CONFIG_GERAL'].filter(a => !abas.includes(a))
-      return {
-        ok: true,
-        message: `Conectado a "${titulo}" (${abas.length} abas).` +
-          (faltando.length ? ' Falta criar as abas de configuração.' : ''),
-      }
+      return { ok: true, message: `Conectado a "${titulo}" (${abas.length} abas).` }
     } catch (err: any) {
       return { ok: false, message: err.message ?? 'Erro desconhecido' }
     }
   })
 
-  ipcMain.handle('criar-abas-config', async () => {
-    try {
-      const criadas = await criarAbasConfig(abrirGateway())
-      return { ok: true, criadas }
-    } catch (err: any) {
-      return { ok: false, message: err.message ?? 'Erro desconhecido' }
-    }
-  })
 
   // Vários arquivos de uma vez (um por dia) — a data de cada um vem do HTML.
   ipcMain.handle('pick-html-files', async () => {
@@ -315,18 +313,20 @@ function registerIPC(): void {
   ipcMain.handle('abrir-regras', () => openRegrasWindow())
   ipcMain.handle('abrir-config', () => openConfigWindow())
 
+  // Regras vêm do arquivo local; a planilha (se configurada) só alimenta a
+  // lista de colaboradores e os feriados — sem ela a tela abre do mesmo jeito.
   ipcMain.handle('regras-carregar', async () => {
     try {
-      return { ok: true, ...(await carregarRegras(abrirGateway())) }
+      return { ok: true, ...(await carregarRegras(gatewayOpcional())) }
     } catch (err: any) {
       return { ok: false, message: err.message ?? 'Erro desconhecido' }
     }
   })
 
-  // Valida antes de gravar: com qualquer erro, nada vai pra planilha.
+  // Valida antes de gravar no arquivo local: com qualquer erro, nada é salvo.
   ipcMain.handle('regras-salvar', async (_e, regras: RegrasEditaveis) => {
     try {
-      const v = await salvarRegras(abrirGateway(), regras)
+      const v = await salvarRegras(regras, gatewayOpcional())
       return { ok: v.erros.length === 0, ...v }
     } catch (err: any) {
       logger.error('[regras]', err.message)

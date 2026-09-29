@@ -128,40 +128,4 @@ export class GoogleSheetsGateway implements SheetGateway {
       requestBody: { ranges: celulas.map(c => `${refAba(aba)}!${c}`) },
     })
   }
-
-  // Uma única escrita (sem clear antes): as linhas novas são completadas com
-  // células vazias até cobrir o tamanho antigo, então sobra nada do conteúdo
-  // anterior e, se a chamada falhar, a aba fica como estava.
-  async substituirTabela(aba: string, linhas: string[][]): Promise<void> {
-    let antigo = await this.lerGrid(aba)
-    if (!antigo) {
-      await this.criarAba(aba, [])
-      antigo = []
-    }
-    const nLinhas = Math.max(linhas.length, antigo.length)
-    const nCols = Math.max(...linhas.map(l => l.length), ...antigo.map(l => l.length), 1)
-    const values = Array.from({ length: nLinhas }, (_, i) =>
-      Array.from({ length: nCols }, (_, j) => linhas[i]?.[j] ?? ''))
-    await this.api.spreadsheets.values.update({
-      spreadsheetId: this.spreadsheetId,
-      range: `${refAba(aba)}!A1`,
-      valueInputOption: 'RAW',
-      requestBody: { values },
-    })
-  }
-
-  async criarAba(nome: string, cabecalho: string[]): Promise<void> {
-    await this.api.spreadsheets.batchUpdate({
-      spreadsheetId: this.spreadsheetId,
-      requestBody: { requests: [{ addSheet: { properties: { title: nome } } }] },
-    })
-    this.meta = null
-    if (!cabecalho.length) return
-    await this.api.spreadsheets.values.update({
-      spreadsheetId: this.spreadsheetId,
-      range: `${refAba(nome)}!A1`,
-      valueInputOption: 'RAW',
-      requestBody: { values: [cabecalho] },
-    })
-  }
 }

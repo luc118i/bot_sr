@@ -7,7 +7,11 @@ contextBridge.exposeInMainWorld('agent', {
   testConnection: (cfg: unknown) => ipcRenderer.invoke('test-connection', cfg),
   testarPonto: (cfg: unknown) => ipcRenderer.invoke('testar-ponto', cfg),
   preencher: (params: unknown) => ipcRenderer.invoke('preencher', params),
-  criarAbasConfig: () => ipcRenderer.invoke('criar-abas-config'),
+  // Andamento do "Preencher" — um evento por fase de cada dia.
+  onProgresso: (cb: (ev: unknown) => void) => {
+    ipcRenderer.removeAllListeners('progresso')
+    ipcRenderer.on('progresso', (_e, ev) => cb(ev))
+  },
   pickHtmlFiles: () => ipcRenderer.invoke('pick-html-files'),
   simular: (params: unknown) => ipcRenderer.invoke('simular', params),
   escrever: () => ipcRenderer.invoke('escrever'),

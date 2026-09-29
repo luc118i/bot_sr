@@ -4,8 +4,8 @@ import { extrairSpreadsheetId } from './sheets/googleSheets'
 import type { CredenciaisPonto, TipoLoginPonto } from './ponto/secullum'
 
 // Config LOCAL da máquina (credenciais e qual planilha). As regras de negócio
-// (horários, tolerância, exceções, apelidos) ficam nas abas CONFIG_* da
-// própria planilha, editáveis sem mexer no app.
+// (horários, tolerância, exceções, apelidos) ficam em regras.json, também
+// local, editado pela tela "Horários e regras".
 export interface AgentConfig {
   // Como o bot fala com a planilha: Apps Script publicado dentro da própria
   // planilha (link /exec + token) ou Service Account (JSON + ID da planilha).

@@ -4,9 +4,12 @@ Agente local (Electron, bandeja do Windows — mesmo molde do `rizer-agent`) que
 acompanhamento de ponto (Central do Funcionário / Secullum) e preenche a planilha de
 frequência no Google Sheets com `.` (pontual), `P` (atraso) e `FE` (férias).
 
-**Um clique:** "Preencher frequência" busca no ponto os **últimos 7 dias**, grava o que for
-seguro e mostra um resumo por dia (preenchido, precisa de revisão, diverge do que já estava
-lançado) com botão **Desfazer**. "Só conferir" mostra o mesmo resumo sem gravar.
+**Um clique:** escolha o dia no calendário (abre sempre em hoje) e clique em **Preencher
+dia**, ou em **Conferir semana** para segunda a sábado daquela semana (até hoje). O bot lê
+o ponto, confere com a planilha e grava **dia por dia**, com barra de progresso e uma linha
+por dia mostrando a fase (lendo o ponto → conferindo → gravando → pronto / pulado / erro).
+No fim, resumo por dia (preenchido, precisa de revisão, diverge do que já estava lançado)
+com botão **Desfazer**. Marcando **simular (não grava)**, faz tudo sem gravar.
 
 **Proteções:** célula já preenchida nunca é alterada · "sem ponto" nunca vira `F` sozinho ·
 qualquer dúvida de nome vai para revisão · antes de gravar, relê cada célula e pula as que
@@ -17,11 +20,11 @@ gravado pelo bot — o que alguém mudou depois fica).
 ## Testando na planilha original
 
 1. Google Sheets → Arquivo → Histórico de versões → **Nomear versão atual** ("Antes do bot").
-2. **Horários e regras** → salvar: só cria/grava as abas `CONFIG_*`.
-3. **Só conferir**: os dias já lançados à mão aparecem como "confere" ou "diverge". Ajuste
-   horários individuais até zerar as divergências.
-4. **Preencher frequência**. Se algo sair errado: **Desfazer esta escrita** (ou **Desfazer
-   escrita anterior...** escolhendo os relatórios).
+2. **Horários e regras** → salvar (fica nesta máquina, não mexe na planilha).
+3. **Simular (não grava)** + **Conferir semana** numa semana já lançada à mão: os dias
+   aparecem como "confere" ou "diverge". Ajuste horários individuais até zerar as divergências.
+4. Desmarque "simular" e **Preencher dia**. Se algo sair errado: **Desfazer esta escrita**
+   (ou **Desfazer escrita anterior...** escolhendo os relatórios).
 
 ## Ponto (Secullum)
 
@@ -72,15 +75,10 @@ node dist/cli.js criar-abas-config
 2. Nas **Configurações** do app: escolha a conexão, preencha → "Testar conexão".
 3. Em **Horários e regras** (bandeja ou botão na tela principal): entrada padrão, tolerância,
    horário de corte, horários individuais (com vigência), exceções de um dia e apelidos.
-   A tela valida tudo antes de gravar e salva nas abas `CONFIG_*` da planilha (criadas se faltarem),
-   então vale para qualquer máquina/responsável que rodar o bot.
-
-| Aba | Colunas |
-|---|---|
-| `CONFIG_GERAL` | `tolerancia_min`, `entrada_padrao`, `horario_corte` |
-| `CONFIG_HORARIOS` | `adm`, `entrada`, `saida`, `tolerancia_min`, `vigencia_inicio`, `vigencia_fim`, `obs` |
-| `CONFIG_EXCECOES` | `data`, `adm`, `entrada_prevista`, `codigo`, `obs` |
-| `CONFIG_APELIDOS` | `nome_no_ponto`, `adm`, `obs` |
+   A tela valida tudo antes de gravar e salva **nesta máquina**, em `regras.json` (pasta de
+   dados do app, junto com `logs/` e `relatorios/`; a versão anterior fica em
+   `regras.anterior.json`). **A planilha de frequência não recebe nenhuma configuração**:
+   dela o bot só lê a BASE DE DADOS e as abas dos meses, e só grava as células dos dias.
 
 Horário previsto: exceção do dia → horário individual vigente → padrão.
 Tolerância inclusiva: entrada ≤ previsto + tolerância → `.`; depois → `P`.
@@ -135,14 +133,14 @@ src/core/        regras puras (sem Electron/Google) + testes
   pontoApi       resposta da API do ponto → registros
   pontoParser    HTML do ponto → registros (modo avançado)
   layoutMes      acha/valida colunas da aba do mês; colunas ocultas = dias não úteis
-  configPlanilha abas CONFIG_* e resolução do horário previsto
+  configPlanilha regras tipadas e resolução do horário previsto
   matcher        nome do ponto → linha (apelidos, sugestão p/ nome truncado)
   planner        decisão por colaborador + plano de escrita
 src/ponto/       SecullumClient (API da Central do Funcionário)
 src/sheets/      AppsScriptGateway, GoogleSheetsGateway (Service Account), XlsxGateway (cópia, só leitura)
 apps-script/     Codigo.gs — o script que vai dentro da planilha
 src/service.ts   preencherAutomatico (um clique) / simularLote / escrita / desfazer
-src/regras.ts    tela "Horários e regras" ↔ abas CONFIG_* (carregar, validar, salvar)
+src/regras.ts    tela "Horários e regras" ↔ regras.json local (carregar, validar, salvar)
 src/main.ts      bandeja + janelas; src/cli.ts linha de comando
 ```
 

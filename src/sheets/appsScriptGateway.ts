@@ -8,6 +8,33 @@ import type { SheetGateway } from './gateway'
 
 const TIMEOUT_MS = 60_000
 
+// Quando algo está errado na implantação, o Google responde uma página HTML
+// (HTTP 200) em vez do JSON do script. Tira o texto visível dela e traduz os
+// casos conhecidos numa instrução do que fazer.
+export function explicarPaginaDoGoogle(html: string, status: number, urlFinal = ''): string {
+  const texto = html
+    .replace(/<script[\s\S]*?<\/script>/gi, '')
+    .replace(/<style[\s\S]*?<\/style>/gi, '')
+    .replace(/<[^>]+>/g, ' ')
+    .replace(/&nbsp;/g, ' ').replace(/&#39;/g, "'").replace(/&quot;/g, '"')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .slice(0, 200)
+
+  if (/fun[çc][ãa]o de script n[ãa]o encontrada|script function not found/i.test(texto)) {
+    return `Apps Script: "${texto.replace(/^Erro\s*/i, '')}" — a versão publicada não tem o código do bot. ` +
+      'Cole e salve o Codigo.gs, depois Implantar → Gerenciar implantações → editar (lápis) → Versão: Nova versão → Implantar. O link continua o mesmo.'
+  }
+  if (/accounts\.google\.com/.test(urlFinal) || /fazer login|sign in/i.test(texto)) {
+    return 'Apps Script pediu login do Google — a implantação precisa ter acesso "Qualquer pessoa" (Implantar → Gerenciar implantações).'
+  }
+  if (/autoriza|authorization/i.test(texto)) {
+    return `Apps Script: "${texto}" — abra o projeto, rode qualquer função uma vez no editor e aceite as permissões, depois publique uma nova versão.`
+  }
+  return `O Apps Script não respondeu JSON (HTTP ${status}). Resposta do Google: "${texto || 'vazia'}". ` +
+    'Confira se a implantação é "App da Web" com acesso "Qualquer pessoa" e se o link é o da implantação atual.'
+}
+
 export class AppsScriptGateway implements SheetGateway {
   private meta: { titulo: string; abas: string[] } | null = null
   readonly descricao: string
@@ -40,11 +67,7 @@ export class AppsScriptGateway implements SheetGateway {
     try {
       json = JSON.parse(texto)
     } catch {
-      // Página HTML do Google = implantação sem acesso "Qualquer pessoa" ou link errado.
-      throw new Error(
-        `O Apps Script não respondeu JSON (HTTP ${resp.status}). Confira se a implantação é "App da Web" ` +
-        `com acesso "Qualquer pessoa" e se o link é o da implantação atual.`,
-      )
+      throw new Error(explicarPaginaDoGoogle(texto, resp.status, resp.url))
     }
     if (!json.ok) throw new Error(`Apps Script: ${json.erro ?? 'erro desconhecido'}`)
     return json.dados as T
@@ -79,15 +102,5 @@ export class AppsScriptGateway implements SheetGateway {
   async limpar(aba: string, celulas: string[]) {
     if (!celulas.length) return
     await this.chamar('limpar', { aba, celulas })
-  }
-
-  async criarAba(nome: string, cabecalho: string[]) {
-    await this.chamar('criarAba', { nome, cabecalho })
-    this.meta = null
-  }
-
-  async substituirTabela(aba: string, linhas: string[][]) {
-    await this.chamar('substituirTabela', { aba, linhas })
-    this.meta = null
   }
 }

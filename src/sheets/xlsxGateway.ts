@@ -57,13 +57,6 @@ export class XlsxGateway implements SheetGateway {
     throw new Error('Modo arquivo .xlsx é somente leitura.')
   }
 
-  async criarAba(): Promise<void> {
-    throw new Error('Modo arquivo .xlsx é somente leitura.')
-  }
-
-  async substituirTabela(): Promise<void> {
-    throw new Error('Modo arquivo .xlsx é somente leitura.')
-  }
 }
 
 // Mesmo formato do UNFORMATTED_VALUE do Google: datas como serial, horas como

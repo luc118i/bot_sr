@@ -17,8 +17,9 @@
  *
  * Segurança: sem o TOKEN certo nada é lido nem gravado. O link + token
  * funcionam como uma chave — ficam só no config.json da máquina do bot.
- * O script só faz o que o bot precisa: ler abas, ler/gravar/limpar células
- * pontuais e regravar as abas CONFIG_*.
+ * O script só faz o que o bot precisa: ler abas e ler/gravar/limpar células
+ * pontuais dos dias. Não cria, apaga nem renomeia abas — as regras do bot
+ * ficam num arquivo local da máquina, nunca na planilha.
  */
 
 function doPost(e) {
@@ -48,6 +49,20 @@ function doPost(e) {
 // Só pra testar no navegador que o link está no ar (não expõe dados).
 function doGet() {
   return resposta_({ ok: true, servico: 'frequencia-agent', versao: 1 })
+}
+
+/**
+ * RODE ESTA FUNÇÃO UMA VEZ NO EDITOR (selecione "autorizar" → Executar) e
+ * aceite as permissões. É o que libera o App da Web a ler/gravar a planilha
+ * em seu nome. No fim, o registro de execução mostra se está tudo pronto.
+ */
+function autorizar() {
+  const ss = planilha_()
+  const token = PropertiesService.getScriptProperties().getProperty('TOKEN')
+  Logger.log('Planilha: "' + ss.getName() + '" (' + ss.getSheets().length + ' abas) — acesso OK.')
+  Logger.log(token
+    ? 'TOKEN configurado (' + token.length + ' caracteres). Confira se é o mesmo das Configurações do bot.'
+    : 'FALTA o TOKEN: Configurações do projeto → Propriedades do script → adicionar TOKEN = token gerado no bot.')
 }
 
 const ACOES_ = {
@@ -88,32 +103,6 @@ const ACOES_ = {
     if (!req.celulas.length) return 0
     aba_(ss, req.aba).getRangeList(req.celulas).clearContent()
     return req.celulas.length
-  },
-
-  criarAba: function (ss, req) {
-    const sh = ss.insertSheet(req.nome)
-    if (req.cabecalho && req.cabecalho.length) sh.getRange(1, 1, 1, req.cabecalho.length).setValues([req.cabecalho])
-    return true
-  },
-
-  // Regrava uma aba CONFIG_* inteira. Texto puro (formato "@"), pra "08:00" e
-  // "28/09/2026" ficarem exatamente como digitados na tela do bot.
-  substituirTabela: function (ss, req) {
-    if (!/^CONFIG_/.test(req.aba)) throw new Error('substituirTabela só pode ser usada nas abas CONFIG_*.')
-    const sh = ss.getSheetByName(req.aba) || ss.insertSheet(req.aba)
-    const antigo = sh.getDataRange().getValues()
-    const nLinhas = Math.max(req.linhas.length, antigo.length, 1)
-    const nCols = Math.max.apply(null, [1].concat(req.linhas.map(function (l) { return l.length }), antigo.map(function (l) { return l.length })))
-    const valores = []
-    for (var i = 0; i < nLinhas; i++) {
-      const linha = []
-      for (var j = 0; j < nCols; j++) linha.push(req.linhas[i] && req.linhas[i][j] != null ? String(req.linhas[i][j]) : '')
-      valores.push(linha)
-    }
-    const r = sh.getRange(1, 1, nLinhas, nCols)
-    r.setNumberFormat('@')
-    r.setValues(valores)
-    return true
   },
 }
 

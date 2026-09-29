@@ -2,21 +2,22 @@ import { normalize, normalizeAdm } from './normalize'
 import { parseCodigo, type Codigo } from './codigos'
 import { parseDataPlanilha, parseHora } from './tempo'
 
+// Regras do bot (padrão, horários individuais, exceções, apelidos). Ficam num
+// arquivo LOCAL da máquina (regras.json, editado pela tela "Horários e regras")
+// — nunca na planilha de frequência. Aqui elas chegam como tabelas (linha 0 =
+// cabeçalho achado pelo nome, linhas 1+ = itens) e viram a config tipada.
 // Feriados NÃO ficam aqui: a planilha já os marca escondendo a coluna do dia
 // (ver diasNaoUteis em layoutMes.ts).
-//
-// Abas de configuração dentro da própria planilha — editáveis sem mexer em
-// código. Linha 1 = cabeçalho (achado pelo nome, a ordem das colunas é livre),
-// linha 2+ = dados. Ver criarAbasConfig() pra estrutura inicial.
 
-export const ABAS_CONFIG = {
-  geral: 'CONFIG_GERAL',
-  horarios: 'CONFIG_HORARIOS',
-  excecoes: 'CONFIG_EXCECOES',
-  apelidos: 'CONFIG_APELIDOS',
+// Nome de cada seção como aparece na tela — usado nas mensagens.
+export const SECOES_CONFIG = {
+  geral: 'Padrão',
+  horarios: 'Horários individuais',
+  excecoes: 'Exceções',
+  apelidos: 'Apelidos',
 } as const
 
-export const CABECALHOS_CONFIG: Record<keyof typeof ABAS_CONFIG, string[]> = {
+export const CABECALHOS_CONFIG: Record<keyof typeof SECOES_CONFIG, string[]> = {
   geral: ['tolerancia_min', 'entrada_padrao', 'horario_corte'],
   horarios: ['adm', 'entrada', 'saida', 'tolerancia_min', 'vigencia_inicio', 'vigencia_fim', 'obs'],
   excecoes: ['data', 'adm', 'entrada_prevista', 'codigo', 'obs'],
@@ -35,7 +36,7 @@ export interface HorarioIndividual {
   toleranciaMin: number | null
   vigenciaInicio: string | null
   vigenciaFim: string | null
-  linha: number
+  item: number // posição na lista da tela (1, 2, 3...) — pras mensagens
 }
 
 export interface Excecao {
@@ -43,7 +44,7 @@ export interface Excecao {
   adm: string
   entradaPrevistaMin: number | null
   codigoForcado: Codigo | null
-  linha: number
+  item: number
 }
 
 export interface Apelido { nomePonto: string; adm: string }
@@ -58,20 +59,20 @@ export interface ConfigPlanilha {
 
 type Grid = string[][]
 
-function lerTabela(grid: Grid | null): { rows: Record<string, string>[]; linhas: number[] } {
-  if (!grid || grid.length === 0) return { rows: [], linhas: [] }
+function lerTabela(grid: Grid | null): { rows: Record<string, string>[]; itens: number[] } {
+  if (!grid || grid.length === 0) return { rows: [], itens: [] }
   const header = (grid[0] ?? []).map(h => normalize(h).replace(/ /g, '_'))
   const rows: Record<string, string>[] = []
-  const linhas: number[] = []
+  const itens: number[] = []
   for (let i = 1; i < grid.length; i++) {
     const r = grid[i] ?? []
     if (r.every(c => !String(c ?? '').trim())) continue
     const obj: Record<string, string> = {}
     header.forEach((h, j) => { if (h) obj[h.toLowerCase()] = String(r[j] ?? '').trim() })
     rows.push(obj)
-    linhas.push(i + 1)
+    itens.push(i)
   }
-  return { rows, linhas }
+  return { rows, itens }
 }
 
 export interface GridsConfig {
@@ -89,29 +90,29 @@ export interface OverridesGeral {
 export function parseConfigPlanilha(g: GridsConfig, overrides: OverridesGeral = {}): ConfigPlanilha {
   const avisos: string[] = []
 
-  // ── CONFIG_GERAL ──
+  // ── Padrão ──
   const geralRow = lerTabela(g.geral).rows[0] ?? {}
   const tol = overrides.toleranciaMin ?? (geralRow['tolerancia_min'] ? Number(geralRow['tolerancia_min']) : NaN)
   const entrada = parseHora(overrides.entradaPadrao ?? geralRow['entrada_padrao'])
   if (!Number.isFinite(tol) || tol < 0) {
-    throw new Error(`${ABAS_CONFIG.geral}: "tolerancia_min" ausente ou inválida (ex.: 5).`)
+    throw new Error(`${SECOES_CONFIG.geral}: tolerância ausente ou inválida (ex.: 5).`)
   }
   if (entrada === null) {
-    throw new Error(`${ABAS_CONFIG.geral}: "entrada_padrao" ausente ou inválida (ex.: 08:00).`)
+    throw new Error(`${SECOES_CONFIG.geral}: entrada padrão ausente ou inválida (ex.: 08:00).`)
   }
   const corteRaw = geralRow['horario_corte'] ?? ''
   const corte = corteRaw ? parseHora(corteRaw) : null
-  if (corteRaw && corte === null) avisos.push(`${ABAS_CONFIG.geral}: "horario_corte" inválido ("${corteRaw}") — ignorado.`)
+  if (corteRaw && corte === null) avisos.push(`${SECOES_CONFIG.geral}: horário de corte inválido ("${corteRaw}") — ignorado.`)
 
-  // ── CONFIG_HORARIOS ──
+  // ── Horários individuais ──
   const horarios: HorarioIndividual[] = []
   const th = lerTabela(g.horarios)
   th.rows.forEach((r, i) => {
-    const linha = th.linhas[i]!
+    const item = th.itens[i]!
     const adm = normalizeAdm(r['adm'])
     const ent = parseHora(r['entrada'])
     if (!adm || ent === null) {
-      avisos.push(`${ABAS_CONFIG.horarios} linha ${linha}: ADM ou entrada inválidos — linha ignorada.`)
+      avisos.push(`${SECOES_CONFIG.horarios}, item ${item}: colaborador ou entrada inválidos — item ignorado.`)
       return
     }
     const tolInd = r['tolerancia_min'] ? Number(r['tolerancia_min']) : null
@@ -121,35 +122,35 @@ export function parseConfigPlanilha(g: GridsConfig, overrides: OverridesGeral = 
       toleranciaMin: tolInd !== null && Number.isFinite(tolInd) ? tolInd : null,
       vigenciaInicio: r['vigencia_inicio'] ? parseDataPlanilha(r['vigencia_inicio']) : null,
       vigenciaFim: r['vigencia_fim'] ? parseDataPlanilha(r['vigencia_fim']) : null,
-      linha,
+      item,
     })
   })
 
-  // ── CONFIG_EXCECOES ──
+  // ── Exceções ──
   const excecoes: Excecao[] = []
   const te = lerTabela(g.excecoes)
   te.rows.forEach((r, i) => {
-    const linha = te.linhas[i]!
+    const item = te.itens[i]!
     const data = parseDataPlanilha(r['data'] ?? '')
     const adm = normalizeAdm(r['adm'])
     const entradaPrev = r['entrada_prevista'] ? parseHora(r['entrada_prevista']) : null
     const codigo = r['codigo'] ? parseCodigo(r['codigo']) : null
     if (!data || !adm) {
-      avisos.push(`${ABAS_CONFIG.excecoes} linha ${linha}: data ou ADM inválidos — linha ignorada.`)
+      avisos.push(`${SECOES_CONFIG.excecoes}, item ${item}: data ou colaborador inválidos — item ignorado.`)
       return
     }
     if (r['codigo'] && !codigo) {
-      avisos.push(`${ABAS_CONFIG.excecoes} linha ${linha}: código "${r['codigo']}" não existe na legenda — linha ignorada.`)
+      avisos.push(`${SECOES_CONFIG.excecoes}, item ${item}: código "${r['codigo']}" não existe na legenda — item ignorado.`)
       return
     }
     if (r['entrada_prevista'] && entradaPrev === null) {
-      avisos.push(`${ABAS_CONFIG.excecoes} linha ${linha}: entrada_prevista "${r['entrada_prevista']}" inválida — linha ignorada.`)
+      avisos.push(`${SECOES_CONFIG.excecoes}, item ${item}: entrada prevista "${r['entrada_prevista']}" inválida — item ignorado.`)
       return
     }
-    excecoes.push({ data, adm, entradaPrevistaMin: entradaPrev, codigoForcado: codigo, linha })
+    excecoes.push({ data, adm, entradaPrevistaMin: entradaPrev, codigoForcado: codigo, item })
   })
 
-  // ── CONFIG_APELIDOS ──
+  // ── Apelidos ──
   const apelidos: Apelido[] = []
   for (const r of lerTabela(g.apelidos).rows) {
     const nomePonto = normalize(r['nome_no_ponto'])
@@ -185,10 +186,10 @@ export function resolverHorario(cfg: ConfigPlanilha, adm: string, data: string):
   const tol = individual?.toleranciaMin ?? cfg.geral.toleranciaMin
 
   if (exc) {
-    return { entradaMin: exc.entradaPrevistaMin!, toleranciaMin: tol, origem: `${ABAS_CONFIG.excecoes} linha ${exc.linha}` }
+    return { entradaMin: exc.entradaPrevistaMin!, toleranciaMin: tol, origem: `exceção do dia (item ${exc.item})` }
   }
   if (individual) {
-    return { entradaMin: individual.entradaMin, toleranciaMin: tol, origem: `${ABAS_CONFIG.horarios} linha ${individual.linha}` }
+    return { entradaMin: individual.entradaMin, toleranciaMin: tol, origem: `horário individual (item ${individual.item})` }
   }
   return { entradaMin: cfg.geral.entradaPadraoMin, toleranciaMin: tol, origem: 'padrão' }
 }
