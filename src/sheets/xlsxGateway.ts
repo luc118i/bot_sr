@@ -35,6 +35,14 @@ export class XlsxGateway implements SheetGateway {
     return Array.from(grid, r => r ?? [])
   }
 
+  async colunasOcultas(aba: string): Promise<Set<number>> {
+    const ws = (await this.carregar()).getWorksheet(aba)
+    const ocultas = new Set<number>()
+    if (!ws) return ocultas
+    for (let c = 1; c <= ws.columnCount; c++) if (ws.getColumn(c).hidden) ocultas.add(c)
+    return ocultas
+  }
+
   async lerCelulas(aba: string, celulas: string[]): Promise<string[]> {
     const ws = (await this.carregar()).getWorksheet(aba)
     if (!ws) throw new Error(`Aba "${aba}" não existe no arquivo.`)

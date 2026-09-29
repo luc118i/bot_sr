@@ -12,6 +12,9 @@ export interface SheetGateway {
   lerGrid(aba: string): Promise<string[][] | null>
   /** Valor atual de cada célula (A1), na mesma ordem. */
   lerCelulas(aba: string, celulas: string[]): Promise<string[]>
+  /** Colunas ocultas pelo usuário (1-based). Na planilha de frequência, coluna
+   *  de dia oculta = domingo ou feriado — é assim que o calendário é mantido. */
+  colunasOcultas(aba: string): Promise<Set<number>>
   escrever(aba: string, valores: { celula: string; valor: string }[]): Promise<void>
   /** Deixa as células vazias (usado só pelo "Desfazer" de uma escrita do bot). */
   limpar(aba: string, celulas: string[]): Promise<void>

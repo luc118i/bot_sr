@@ -3,7 +3,7 @@ import { codigoForcado, resolverHorario, type ConfigPlanilha, type HorarioPrevis
 import type { LayoutMes, LinhaColaborador } from './layoutMes'
 import { Matcher, type BaseColaborador } from './matcher'
 import type { PontoRegistro } from './pontoParser'
-import { colunaA1, diaDaSemana, formatHora, hojeISO, parseDataISO, parseHora } from './tempo'
+import { colunaA1, formatHora, hojeISO, parseDataISO, parseHora } from './tempo'
 
 // Monta o PLANO do dia: o que seria escrito e o que fica pra revisão. Não
 // escreve nada — a escrita (executarEscrita em service.ts) só aplica um plano
@@ -65,14 +65,15 @@ export interface EntradaPlano {
 }
 
 // Só depois do fim do expediente o dia pode ser classificado: um saldo
-// negativo de manhã é só saldo parcial. Datas futuras, domingos e feriados
-// também param aqui (a não ser com `forcar`).
+// negativo de manhã é só saldo parcial — `forcar` libera só esse caso.
+// Datas futuras param sempre. Domingos e feriados não passam por aqui: são
+// dias não úteis da planilha (colunas ocultas) e nunca são preenchidos.
 export function validarData(data: string, cfg: ConfigPlanilha, now: Date, forcar: boolean): string[] {
-  const d = parseDataISO(data)
+  parseDataISO(data)
   const hoje = hojeISO(now)
   const avisos: string[] = []
   const bloquear = (msg: string) => {
-    if (!forcar) throw new Error(`${msg} (use "forçar" se tiver certeza)`)
+    if (!forcar) throw new Error(`${msg} (marque "forçar" se o expediente já acabou)`)
     avisos.push(`FORÇADO: ${msg}`)
   }
 
@@ -83,8 +84,6 @@ export function validarData(data: string, cfg: ConfigPlanilha, now: Date, forcar
     if (corte === null) bloquear('É o dia de hoje e CONFIG_GERAL não tem "horario_corte" — não dá pra saber se o expediente acabou.')
     else if (agora < corte) bloquear(`Ainda são ${formatHora(agora)}; o dia só pode ser classificado depois de ${formatHora(corte)} (horario_corte).`)
   }
-  if (diaDaSemana(d) === 0) bloquear(`${data} é domingo — pela regra da planilha fica em branco.`)
-  if (cfg.feriados.has(data)) bloquear(`${data} está em CONFIG_FERIADOS — pela regra da planilha fica em branco.`)
   return avisos
 }
 
@@ -107,12 +106,22 @@ export function decidir(reg: PontoRegistro, h: HorarioPrevisto): { codigo: Codig
   }
 }
 
+export class DiaNaoUtilError extends Error {}
+
 export function montarPlano(e: EntradaPlano): Plano {
   const now = e.now ?? new Date()
   const { layout, grid, cfg, data } = e
+  const dia = parseDataISO(data).dia
+  const naoUtil = layout.diasNaoUteis.get(dia)
+  if (naoUtil) {
+    throw new DiaNaoUtilError(
+      naoUtil === 'domingo'
+        ? `${data} é domingo — não se preenche.`
+        : `${data} tem a coluna oculta na aba ${layout.aba} (feriado/dia não trabalhado) — não se preenche.`,
+    )
+  }
   const avisos = [...cfg.avisos, ...layout.avisos, ...validarData(data, cfg, now, !!e.forcar)]
 
-  const dia = parseDataISO(data).dia
   const col = layout.colunaDoDia.get(dia)
   if (!col) throw new Error(`[${layout.aba}] Sem coluna para o dia ${dia}.`)
 

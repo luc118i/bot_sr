@@ -2,6 +2,9 @@ import { normalize, normalizeAdm } from './normalize'
 import { parseCodigo, type Codigo } from './codigos'
 import { parseDataPlanilha, parseHora } from './tempo'
 
+// Feriados NÃO ficam aqui: a planilha já os marca escondendo a coluna do dia
+// (ver diasNaoUteis em layoutMes.ts).
+//
 // Abas de configuração dentro da própria planilha — editáveis sem mexer em
 // código. Linha 1 = cabeçalho (achado pelo nome, a ordem das colunas é livre),
 // linha 2+ = dados. Ver criarAbasConfig() pra estrutura inicial.
@@ -11,7 +14,6 @@ export const ABAS_CONFIG = {
   horarios: 'CONFIG_HORARIOS',
   excecoes: 'CONFIG_EXCECOES',
   apelidos: 'CONFIG_APELIDOS',
-  feriados: 'CONFIG_FERIADOS',
 } as const
 
 export const CABECALHOS_CONFIG: Record<keyof typeof ABAS_CONFIG, string[]> = {
@@ -19,7 +21,6 @@ export const CABECALHOS_CONFIG: Record<keyof typeof ABAS_CONFIG, string[]> = {
   horarios: ['adm', 'entrada', 'saida', 'tolerancia_min', 'vigencia_inicio', 'vigencia_fim', 'obs'],
   excecoes: ['data', 'adm', 'entrada_prevista', 'codigo', 'obs'],
   apelidos: ['nome_no_ponto', 'adm', 'obs'],
-  feriados: ['data', 'descricao'],
 }
 
 export interface ConfigGeral {
@@ -52,7 +53,6 @@ export interface ConfigPlanilha {
   horarios: HorarioIndividual[]
   excecoes: Excecao[]
   apelidos: Apelido[]
-  feriados: Set<string>
   avisos: string[]
 }
 
@@ -79,7 +79,6 @@ export interface GridsConfig {
   horarios: Grid | null
   excecoes: Grid | null
   apelidos: Grid | null
-  feriados: Grid | null
 }
 
 export interface OverridesGeral {
@@ -158,19 +157,11 @@ export function parseConfigPlanilha(g: GridsConfig, overrides: OverridesGeral = 
     if (nomePonto && adm) apelidos.push({ nomePonto, adm })
   }
 
-  // ── CONFIG_FERIADOS ──
-  const feriados = new Set<string>()
-  for (const r of lerTabela(g.feriados).rows) {
-    const d = parseDataPlanilha(r['data'] ?? '')
-    if (d) feriados.add(d)
-  }
-
   return {
     geral: { toleranciaMin: tol, entradaPadraoMin: entrada, horarioCorteMin: corte },
     horarios,
     excecoes,
     apelidos,
-    feriados,
     avisos,
   }
 }

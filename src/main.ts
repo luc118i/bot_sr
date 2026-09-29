@@ -5,9 +5,11 @@ import fs from 'fs'
 import { getConfigPath, saveConfig, type AgentConfig } from './config'
 import { getLogsDir, getRelatoriosDir, logger } from './logger'
 import type { Plano } from './core/planner'
-import { hojeISO } from './core/tempo'
 import { GoogleSheetsGateway } from './sheets/googleSheets'
-import { abrirGateway, criarAbasConfig, desfazerEscrita, executarEscrita, salvarRelatorio, simular, type ResultadoEscrita } from './service'
+import {
+  abrirGateway, criarAbasConfig, desfazerEscrita, executarEscritaLote, salvarRelatorio, simularLote,
+  type EscritaDoDia, type Lote, type ResultadoDesfazer, type ResultadoEscrita,
+} from './service'
 import { carregarRegras, salvarRegras, type RegrasEditaveis } from './regras'
 
 let tray: Tray | null = null
@@ -15,15 +17,15 @@ let configWin: BrowserWindow | null = null
 let appWin: BrowserWindow | null = null
 let regrasWin: BrowserWindow | null = null
 
-// Último plano simulado na janela principal. "Escrever" só grava ESTE plano —
-// o operador aprova exatamente o que viu no relatório, nunca uma nova leitura.
-let ultimoPlano: Plano | null = null
+// Última simulação (1 ou vários dias) na janela principal. "Escrever" só grava
+// ESTES planos — o operador aprova exatamente o que viu, nunca uma nova leitura.
+let ultimoLote: Lote | null = null
 const VALIDADE_PLANO_MS = 60 * 60 * 1000
 
-// Última escrita feita nesta janela — alvo do botão "Desfazer esta escrita".
-// Escritas mais antigas (ou de antes de reabrir o app) são desfeitas pelo
-// relatório .json salvo em relatorios/.
-let ultimaEscrita: { plano: Plano; escritas: ResultadoEscrita['escritas'] } | null = null
+// Dias gravados na última escrita desta janela — alvo do "Desfazer esta
+// escrita". Escritas mais antigas (ou de antes de reabrir o app) são desfeitas
+// pelo relatório .json de cada dia, salvo em relatorios/.
+let ultimaEscrita: EscritaDoDia[] | null = null
 
 const gotLock = app.requestSingleInstanceLock()
 if (!gotLock) {
@@ -95,7 +97,7 @@ function openAppWindow(): void {
     webPreferences: { preload: preloadPath(), contextIsolation: true, nodeIntegration: false },
   })
   appWin.loadFile(rendererPath('app.html'))
-  appWin.on('closed', () => { appWin = null; ultimoPlano = null; ultimaEscrita = null })
+  appWin.on('closed', () => { appWin = null; ultimoLote = null; ultimaEscrita = null })
 }
 
 function openRegrasWindow(): void {
@@ -158,24 +160,25 @@ function registerIPC(): void {
     }
   })
 
-  ipcMain.handle('pick-html-file', async () => {
+  // Vários arquivos de uma vez (um por dia) — a data de cada um vem do HTML.
+  ipcMain.handle('pick-html-files', async () => {
     const result = await dialog.showOpenDialog(appWin!, {
-      title: 'Selecionar HTML salvo da tela de ponto',
+      title: 'Selecionar o HTML de cada dia (pode escolher vários)',
       filters: [{ name: 'HTML', extensions: ['html', 'htm'] }],
-      properties: ['openFile'],
+      properties: ['openFile', 'multiSelections'],
     })
-    if (result.canceled || !result.filePaths[0]) return null
-    return { path: result.filePaths[0], name: path.basename(result.filePaths[0]) }
+    if (result.canceled || !result.filePaths.length) return null
+    return result.filePaths.map(p => ({ path: p, name: path.basename(p) }))
   })
 
-  ipcMain.handle('simular', async (_e, params: { data: string; htmlPath: string; forcar?: boolean }) => {
-    ultimoPlano = null
+  ipcMain.handle('simular', async (_e, params: { htmlPaths: string[]; forcar?: boolean }) => {
+    ultimoLote = null
     try {
-      const html = fs.readFileSync(params.htmlPath, 'utf-8')
-      const plano = await simular(abrirGateway(), { data: params.data || hojeISO(), html, forcar: !!params.forcar })
-      ultimoPlano = plano
-      const relatorio = salvarRelatorio(plano, 'simulacao')
-      return { ok: true, plano, relatorio }
+      const htmls = params.htmlPaths.map(p => ({ arquivo: path.basename(p), html: fs.readFileSync(p, 'utf-8') }))
+      const lote = await simularLote(abrirGateway(), { htmls, forcar: !!params.forcar })
+      ultimoLote = lote
+      for (const plano of lote.planos) salvarRelatorio(plano, 'simulacao')
+      return { ok: true, lote }
     } catch (err: any) {
       logger.error('[simular]', err.message)
       return { ok: false, message: err.message ?? 'Erro desconhecido' }
@@ -183,69 +186,84 @@ function registerIPC(): void {
   })
 
   ipcMain.handle('escrever', async () => {
-    const plano = ultimoPlano
-    if (!plano) return { ok: false, message: 'Rode a simulação antes de escrever.' }
-    if (Date.now() - new Date(plano.geradoEm).getTime() > VALIDADE_PLANO_MS) {
+    const lote = ultimoLote
+    if (!lote) return { ok: false, message: 'Rode a simulação antes de escrever.' }
+    if (Date.now() - new Date(lote.geradoEm).getTime() > VALIDADE_PLANO_MS) {
       return { ok: false, message: 'A simulação tem mais de 1 hora — simule de novo antes de escrever.' }
     }
-    try {
-      const r = await executarEscrita(abrirGateway(), plano)
-      salvarRelatorio(plano, 'escrita', r)
-      ultimoPlano = null // um plano só é aplicado uma vez
-      ultimaEscrita = r.escritas.length ? { plano, escritas: r.escritas } : null
-      return { ok: true, ...r }
-    } catch (err: any) {
-      logger.error('[escrever]', err.message)
-      return { ok: false, message: err.message ?? 'Erro desconhecido' }
+    ultimoLote = null // uma simulação só é aplicada uma vez
+    const { dias, erro } = await executarEscritaLote(abrirGateway(), lote.planos)
+    for (const d of dias) salvarRelatorio(d.plano, 'escrita', { escritas: d.escritas, puladas: d.puladas })
+    // Mesmo com erro no meio, os dias já gravados ficam disponíveis pro Desfazer.
+    ultimaEscrita = dias.some(d => d.escritas.length) ? dias : null
+    return {
+      ok: !erro,
+      message: erro,
+      dias: dias.map(d => ({ data: d.data, aba: d.aba, escritas: d.escritas, puladas: d.puladas })),
     }
   })
 
   ipcMain.handle('desfazer', async () => {
     const alvo = ultimaEscrita
     if (!alvo) return { ok: false, message: 'Nenhuma escrita desta sessão para desfazer.' }
+    const gw = abrirGateway()
+    const dias: ({ data: string; aba: string } & ResultadoDesfazer)[] = []
     try {
-      const r = await desfazerEscrita(abrirGateway(), alvo.plano.aba, alvo.escritas)
-      salvarRelatorio(alvo.plano, 'desfeita', r)
+      for (const d of alvo) {
+        const r = await desfazerEscrita(gw, d.aba, d.escritas)
+        salvarRelatorio(d.plano, 'desfeita', r)
+        dias.push({ data: d.data, aba: d.aba, ...r })
+      }
       ultimaEscrita = null
-      return { ok: true, data: alvo.plano.data, aba: alvo.plano.aba, ...r }
+      return { ok: true, dias }
     } catch (err: any) {
       logger.error('[desfazer]', err.message)
-      return { ok: false, message: err.message ?? 'Erro desconhecido' }
+      // Tira da lista o que já foi desfeito, pra tentar de novo só o resto.
+      ultimaEscrita = alvo.filter(d => !dias.some(x => x.data === d.data))
+      return { ok: false, message: err.message ?? 'Erro desconhecido', dias }
     }
   })
 
-  // Desfaz uma escrita antiga a partir do .json que a própria escrita salvou.
+  // Desfaz escritas antigas a partir dos .json que cada escrita salvou (um
+  // por dia — pra desfazer uma semana, selecione os arquivos dos dias).
   ipcMain.handle('desfazer-de-relatorio', async () => {
     const result = await dialog.showOpenDialog(appWin!, {
-      title: 'Escolha o relatório da escrita a desfazer',
+      title: 'Escolha o(s) relatório(s) de escrita a desfazer',
       defaultPath: ensureDir(getRelatoriosDir()),
       filters: [{ name: 'Relatório de escrita', extensions: ['json'] }],
-      properties: ['openFile'],
+      properties: ['openFile', 'multiSelections'],
     })
-    if (result.canceled || !result.filePaths[0]) return { ok: false, cancelado: true }
+    if (result.canceled || !result.filePaths.length) return { ok: false, cancelado: true }
+    const dias: ({ data: string; aba: string } & ResultadoDesfazer)[] = []
     try {
-      const arq = result.filePaths[0]
-      const { plano, extra } = JSON.parse(fs.readFileSync(arq, 'utf-8')) as { plano: Plano; extra?: ResultadoEscrita }
-      if (!/_escrita_/.test(path.basename(arq)) || !extra?.escritas) {
-        return { ok: false, message: 'Esse arquivo não é o relatório de uma escrita (nome "..._escrita_....json").' }
-      }
-      const lista = extra.escritas.map(e => `${e.celula}="${e.codigo}"`).join(', ')
+      const alvos = result.filePaths.map(arq => {
+        const { plano, extra } = JSON.parse(fs.readFileSync(arq, 'utf-8')) as { plano: Plano; extra?: ResultadoEscrita }
+        if (!/_escrita_/.test(path.basename(arq)) || !extra?.escritas) {
+          throw new Error(`"${path.basename(arq)}" não é o relatório de uma escrita (nome "..._escrita_....json").`)
+        }
+        return { plano, escritas: extra.escritas }
+      })
+      const detalhe = alvos.map(a => `${a.plano.data} (${a.plano.aba}): ${a.escritas.map(e => `${e.celula}="${e.codigo}"`).join(', ') || 'nenhuma célula'}`).join('\n')
       const { response } = await dialog.showMessageBox(appWin!, {
         type: 'warning',
         buttons: ['Desfazer', 'Cancelar'],
         defaultId: 1,
         cancelId: 1,
         title: 'Desfazer escrita',
-        message: `Desfazer a escrita de ${plano.data} (aba "${plano.aba}")?`,
-        detail: `${extra.escritas.length} célula(s): ${lista}\n\nSó serão apagadas as que ainda tiverem exatamente o código gravado pelo bot.`,
+        message: `Desfazer ${alvos.length === 1 ? 'a escrita de ' + alvos[0]!.plano.data : alvos.length + ' escritas'}?`,
+        detail: `${detalhe}\n\nSó serão apagadas as células que ainda tiverem exatamente o código gravado pelo bot.`,
       })
       if (response !== 0) return { ok: false, cancelado: true }
-      const r = await desfazerEscrita(abrirGateway(), plano.aba, extra.escritas)
-      salvarRelatorio(plano, 'desfeita', r)
-      return { ok: true, data: plano.data, aba: plano.aba, ...r }
+      const gw = abrirGateway()
+      for (const a of alvos) {
+        const r = await desfazerEscrita(gw, a.plano.aba, a.escritas)
+        salvarRelatorio(a.plano, 'desfeita', r)
+        dias.push({ data: a.plano.data, aba: a.plano.aba, ...r })
+      }
+      return { ok: true, dias }
     } catch (err: any) {
       logger.error('[desfazer]', err.message)
-      return { ok: false, message: err.message ?? 'Erro desconhecido' }
+      return { ok: false, message: err.message ?? 'Erro desconhecido', dias }
     }
   })
 

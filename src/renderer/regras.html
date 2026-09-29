@@ -80,9 +80,9 @@
     </section>
 
     <section>
-      <h2>Feriados</h2>
-      <p class="hint">O bot não classifica esses dias (ficam em branco, como os domingos).</p>
-      <div id="t-feriados"></div>
+      <h2>Feriados (lidos da planilha)</h2>
+      <p class="hint">O bot considera feriado toda coluna de dia <b>oculta</b> que não seja domingo — é assim que a planilha já marca os dias não trabalhados. Para cadastrar um feriado, esconda a coluna do dia na aba do mês. Esses dias (e os domingos) nunca são preenchidos.</p>
+      <div id="feriados" class="vazio">Carregando...</div>
     </section>
 
     <datalist id="colabs"></datalist>
@@ -107,11 +107,10 @@
       excecoes: [['data', 'Data', 'date', 140], ['adm', 'Colaborador', 'colab', 320], ['entrada_prevista', 'Entrada prevista', 'time', 120],
         ['codigo', 'Código', 'codigo', 90], ['obs', 'Obs.', 'text']],
       apelidos: [['nome_no_ponto', 'Nome no ponto', 'text', 320], ['adm', 'Colaborador na planilha', 'colab', 320], ['obs', 'Obs.', 'text']],
-      feriados: [['data', 'Data', 'date', 140], ['descricao', 'Descrição', 'text']],
     }
     // Campos que a tela não mostra mas precisam voltar pra planilha intactos.
     const OCULTOS = { horarios: ['saida'] }
-    const dados = { horarios: [], excecoes: [], apelidos: [], feriados: [] }
+    const dados = { horarios: [], excecoes: [], apelidos: [] }
 
     function el(tag, props = {}, ...kids) { const e = document.createElement(tag); Object.assign(e, props); e.append(...kids); return e }
     function marcar() { $('dirty').textContent = 'Alterações não salvas'; $('btnSalvar').disabled = false }
@@ -181,10 +180,16 @@
       }
       for (const nome of Object.keys(TABELAS)) { dados[nome] = r.regras[nome]; render(nome) }
 
+      $('feriados').replaceChildren(...r.feriados.map(f => el('div', {
+        textContent: f.erro ? `${f.aba}: não deu pra ler (${f.erro})`
+          : `${f.aba}: ${f.dias.length ? f.dias.map(d => 'dia ' + d).join(', ') : 'nenhum feriado (só domingos ocultos)'}`,
+      })))
+
       $('dirty').textContent = ''
-      msgs(r.abasFaltando.length
-        ? [['info', `As abas ${r.abasFaltando.join(', ')} ainda não existem — serão criadas ao salvar.`]]
-        : [])
+      msgs([
+        ...(r.abasFaltando.length ? [['info', `As abas ${r.abasFaltando.join(', ')} ainda não existem — serão criadas ao salvar.`]] : []),
+        ...r.avisos.map(a => ['warn', a]),
+      ])
     }
 
     $('btnRecarregar').onclick = () => {

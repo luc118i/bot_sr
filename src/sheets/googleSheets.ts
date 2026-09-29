@@ -85,6 +85,20 @@ export class GoogleSheetsGateway implements SheetGateway {
     return (r.data.values ?? []).map(row => row.map(str))
   }
 
+  async colunasOcultas(aba: string): Promise<Set<number>> {
+    const r = await this.api.spreadsheets.get({
+      spreadsheetId: this.spreadsheetId,
+      ranges: [refAba(aba)],
+      fields: 'sheets(data(startColumn,columnMetadata(hiddenByUser)))',
+    })
+    const ocultas = new Set<number>()
+    for (const d of r.data.sheets?.[0]?.data ?? []) {
+      const inicio = d.startColumn ?? 0
+      ;(d.columnMetadata ?? []).forEach((m, i) => { if (m.hiddenByUser) ocultas.add(inicio + i + 1) })
+    }
+    return ocultas
+  }
+
   async lerCelulas(aba: string, celulas: string[]): Promise<string[]> {
     if (!celulas.length) return []
     const r = await this.api.spreadsheets.values.batchGet({

@@ -1,7 +1,8 @@
 import { logger } from './logger'
 import { ABAS_CONFIG, CABECALHOS_CONFIG, parseConfigPlanilha, type GridsConfig } from './core/configPlanilha'
+import { detectarLayout, nomeAbaDoMes } from './core/layoutMes'
 import { normalize, normalizeAdm } from './core/normalize'
-import { formatHora, parseDataPlanilha, parseHora } from './core/tempo'
+import { formatHora, hojeISO, MESES, parseDataISO, parseDataPlanilha, parseHora } from './core/tempo'
 import type { SheetGateway } from './sheets/gateway'
 
 // Ponte entre a tela "Horários e regras" e as abas CONFIG_* da planilha. A
@@ -19,7 +20,6 @@ export interface RegrasEditaveis {
   horarios: Linha<'horarios'>[]
   excecoes: Linha<'excecoes'>[]
   apelidos: Linha<'apelidos'>[]
-  feriados: Linha<'feriados'>[]
 }
 
 export interface Colaborador { adm: string; nome: string; setor: string; ativo: boolean }
@@ -63,21 +63,55 @@ function paraGrid<K extends keyof typeof CABECALHOS_CONFIG>(k: K, linhas: Linha<
   return [[...cab], ...dados]
 }
 
-export async function carregarRegras(gw: SheetGateway): Promise<{ regras: RegrasEditaveis; colaboradores: Colaborador[]; abasFaltando: string[] }> {
+// Feriados que o bot enxerga numa aba de mês: dias NÃO domingo com a coluna
+// oculta. Só leitura na tela — pra cadastrar um feriado, esconda a coluna.
+export interface FeriadosDoMes { aba: string; dias: number[]; erro: string | null }
+
+export async function carregarRegras(gw: SheetGateway, hoje: string = hojeISO()): Promise<{
+  regras: RegrasEditaveis
+  colaboradores: Colaborador[]
+  abasFaltando: string[]
+  feriados: FeriadosDoMes[]
+  avisos: string[]
+}> {
   const abas = await gw.listarAbas()
-  const [geral, horarios, excecoes, apelidos, feriados] = await Promise.all(Object.values(ABAS_CONFIG).map(a => gw.lerGrid(a)))
+  const [geral, horarios, excecoes, apelidos] = await Promise.all(Object.values(ABAS_CONFIG).map(a => gw.lerGrid(a)))
   const vazioGeral = Object.fromEntries(CABECALHOS_CONFIG.geral.map(c => [c, ''])) as Linha<'geral'>
+  const avisos: string[] = []
+  if (abas.includes('CONFIG_FERIADOS')) {
+    avisos.push('A aba CONFIG_FERIADOS não é mais usada — os feriados vêm das colunas ocultas de cada mês. Pode apagá-la.')
+  }
   return {
     regras: {
       geral: lerTabela('geral', geral ?? null)[0] ?? vazioGeral,
       horarios: lerTabela('horarios', horarios ?? null),
       excecoes: lerTabela('excecoes', excecoes ?? null),
       apelidos: lerTabela('apelidos', apelidos ?? null),
-      feriados: lerTabela('feriados', feriados ?? null),
     },
     colaboradores: await lerColaboradores(gw, abas),
     abasFaltando: Object.values(ABAS_CONFIG).filter(a => !abas.includes(a)),
+    feriados: await lerFeriados(gw, abas, hoje),
+    avisos,
   }
+}
+
+// Mês atual e o seguinte — o suficiente pra conferir a semana que vem.
+async function lerFeriados(gw: SheetGateway, abas: string[], hoje: string): Promise<FeriadosDoMes[]> {
+  const { ano, mes } = parseDataISO(hoje)
+  const alvos = [{ ano, mes }, mes === 12 ? { ano: ano + 1, mes: 1 } : { ano, mes: mes + 1 }]
+  const out: FeriadosDoMes[] = []
+  for (const a of alvos) {
+    let aba = MESES[a.mes - 1]!
+    try {
+      aba = nomeAbaDoMes(abas, a.mes)
+      const layout = detectarLayout(aba, (await gw.lerGrid(aba)) ?? [], a.ano, a.mes, await gw.colunasOcultas(aba))
+      const dias = [...layout.diasNaoUteis].filter(([, motivo]) => motivo === 'coluna oculta').map(([d]) => d).sort((x, y) => x - y)
+      out.push({ aba, dias, erro: null })
+    } catch (err: any) {
+      out.push({ aba, dias: [], erro: err.message })
+    }
+  }
+  return out
 }
 
 // BASE DE DADOS: ADM, Colaborador, Locação (setor), Status de Atividade.
@@ -110,7 +144,6 @@ export function validarRegras(r: RegrasEditaveis, colaboradores: Colaborador[]):
     horarios: paraGrid('horarios', r.horarios),
     excecoes: paraGrid('excecoes', r.excecoes),
     apelidos: paraGrid('apelidos', r.apelidos),
-    feriados: paraGrid('feriados', r.feriados),
   }
   try {
     const cfg = parseConfigPlanilha(grids)
@@ -147,7 +180,6 @@ export async function salvarRegras(gw: SheetGateway, r: RegrasEditaveis): Promis
   await gw.substituirTabela(ABAS_CONFIG.horarios, paraGrid('horarios', r.horarios))
   await gw.substituirTabela(ABAS_CONFIG.excecoes, paraGrid('excecoes', r.excecoes))
   await gw.substituirTabela(ABAS_CONFIG.apelidos, paraGrid('apelidos', r.apelidos))
-  await gw.substituirTabela(ABAS_CONFIG.feriados, paraGrid('feriados', r.feriados))
-  logger.info(`[regras] salvas: ${r.horarios.length} horários, ${r.excecoes.length} exceções, ${r.apelidos.length} apelidos, ${r.feriados.length} feriados`)
+  logger.info(`[regras] salvas: ${r.horarios.length} horários, ${r.excecoes.length} exceções, ${r.apelidos.length} apelidos`)
   return v
 }

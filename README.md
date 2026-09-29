@@ -14,10 +14,26 @@ bot — o que alguém mudou depois fica).
 
 1. Google Sheets → Arquivo → Histórico de versões → **Nomear versão atual** ("Antes do bot").
 2. **Horários e regras** → salvar: só cria/grava as abas `CONFIG_*`.
-3. Simule um dia **já lançado à mão** (filtro de data na tela do ponto): nada a escrever, a
+3. Simule dias **já lançados à mão** (filtro de data na tela do ponto): nada a escrever, a
    prévia só mostra o que confere e o que diverge. Ajuste horários até zerar as divergências.
 4. Primeira escrita num dia novo, depois do horário de corte. Se algo sair errado: botão
-   **Desfazer esta escrita** (ou **Desfazer escrita anterior...** escolhendo o relatório).
+   **Desfazer esta escrita** (ou **Desfazer escrita anterior...** escolhendo os relatórios).
+
+## Conferindo a semana
+
+Um HTML por dia (a data é lida de dentro do HTML — não precisa informar). Selecione todos de
+uma vez: a prévia mostra um bloco por dia, pula domingos e feriados, cruza a virada do mês
+(cada dia vai para a sua aba) e um único **Escrever** grava tudo. Um dia com problema (HTML
+errado, dia repetido, mês com cabeçalho quebrado) aparece em vermelho e não impede os outros.
+Se a gravação falhar no meio, os dias já gravados continuam disponíveis para o **Desfazer**.
+
+## Domingos e feriados
+
+A planilha marca os dias não trabalhados **escondendo a coluna do dia**. O bot lê isso: coluna
+oculta = feriado, domingo = sempre não útil — esses dias nunca são preenchidos, nem com
+"forçar". Para cadastrar um feriado, esconda a coluna na aba do mês; a tela **Horários e
+regras** mostra os feriados que o bot encontrou no mês atual e no seguinte. Um dia não
+trabalhado cuja coluna foi esquecida visível só gera "sem ponto → revisão" (nunca `F`).
 
 ## Uso
 
@@ -30,9 +46,9 @@ npm test             # testes do núcleo
 CLI (mesmo núcleo):
 
 ```
-node dist/cli.js simular --html ponto.html --data 2026-09-28
-node dist/cli.js simular --html ponto.html --data 2026-09-28 --xlsx copia.xlsx --entrada-padrao 08:00 --tolerancia 5
-node dist/cli.js escrever --plano relatorios/<arquivo>.json
+node dist/cli.js simular --html seg.html --html ter.html --html qua.html
+node dist/cli.js simular --html ponto.html --xlsx copia.xlsx --entrada-padrao 08:00 --tolerancia 5
+node dist/cli.js escrever --plano relatorios/<data>_simulacao_<hora>.json   # um dia por vez
 node dist/cli.js desfazer --escrita relatorios/<data>_escrita_<hora>.json
 node dist/cli.js criar-abas-config
 ```
@@ -45,7 +61,7 @@ node dist/cli.js criar-abas-config
    com o e-mail dela como **Editor**.
 2. Nas **Configurações** do app: JSON da service account + link da planilha → "Testar conexão".
 3. Em **Horários e regras** (bandeja ou botão na tela principal): entrada padrão, tolerância,
-   horário de corte, horários individuais (com vigência), exceções de um dia, apelidos e feriados.
+   horário de corte, horários individuais (com vigência), exceções de um dia e apelidos.
    A tela valida tudo antes de gravar e salva nas abas `CONFIG_*` da planilha (criadas se faltarem),
    então vale para qualquer máquina/responsável que rodar o bot.
 
@@ -55,7 +71,6 @@ node dist/cli.js criar-abas-config
 | `CONFIG_HORARIOS` | `adm`, `entrada`, `saida`, `tolerancia_min`, `vigencia_inicio`, `vigencia_fim`, `obs` |
 | `CONFIG_EXCECOES` | `data`, `adm`, `entrada_prevista`, `codigo`, `obs` |
 | `CONFIG_APELIDOS` | `nome_no_ponto`, `adm`, `obs` |
-| `CONFIG_FERIADOS` | `data`, `descricao` |
 
 Horário previsto: exceção do dia → horário individual vigente → padrão.
 Tolerância inclusiva: entrada ≤ previsto + tolerância → `.`; depois → `P`.

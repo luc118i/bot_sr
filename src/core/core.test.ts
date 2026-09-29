@@ -9,7 +9,7 @@ import { validarData } from './planner'
 import { colunaA1, parseDataPlanilha, parseHora } from './tempo'
 import { normalize } from './normalize'
 import type { SheetGateway } from '../sheets/gateway'
-import { desfazerEscrita, executarEscrita, simular } from '../service'
+import { desfazerEscrita, executarEscrita, executarEscritaLote, simular, simularLote } from '../service'
 import { carregarRegras, salvarRegras, validarRegras } from '../regras'
 
 const FIXTURE = path.resolve(__dirname, '..', '..', 'test', 'fixtures', 'ponto-sintetico.html')
@@ -59,6 +59,8 @@ class MemoryGateway implements SheetGateway {
   async limpar(aba: string, celulas: string[]) {
     for (const c of celulas) { const [r, k] = this.pos(c); this.abas[aba]![r]![k] = '' }
   }
+  ocultas: Record<string, Set<number>> = {}
+  async colunasOcultas(aba: string) { return this.ocultas[aba] ?? new Set<number>() }
   async criarAba() {}
   async substituirTabela(aba: string, linhas: string[][]) { this.abas[aba] = linhas.map(l => [...l]) }
 }
@@ -146,7 +148,6 @@ const CFG_GRIDS = {
   ],
   excecoes: [['data', 'adm', 'entrada_prevista', 'codigo', 'obs'], ['28/09/2026', '771', '10:00', '', 'avisou'], ['28/09/2026', '143', '', 'AT', '']],
   apelidos: [['nome_no_ponto', 'adm']],
-  feriados: [['data', 'descricao'], ['07/09/2026', 'Independência']],
 }
 
 test('horário previsto: exceção > individual vigente > padrão', () => {
@@ -160,14 +161,20 @@ test('horário previsto: exceção > individual vigente > padrão', () => {
   assert.equal(resolverHorario(cfg, '999', '2026-09-28').origem, 'padrão')
 })
 
-test('validarData: bloqueia hoje antes do corte, domingo, feriado e futuro', () => {
+test('validarData: "forçar" libera só o horário de corte; futuro nunca', () => {
   const cfg = parseConfigPlanilha(CFG_GRIDS)
   assert.throws(() => validarData('2026-09-28', cfg, new Date(2026, 8, 28, 11, 0), false), /18:00/)
+  assert.equal(validarData('2026-09-28', cfg, new Date(2026, 8, 28, 11, 0), true).length, 1)
   assert.deepEqual(validarData('2026-09-28', cfg, new Date(2026, 8, 28, 18, 30), false), [])
-  assert.throws(() => validarData('2026-09-27', cfg, new Date(2026, 8, 28, 20), false), /domingo/)
-  assert.throws(() => validarData('2026-09-07', cfg, new Date(2026, 8, 28, 20), false), /FERIADOS/)
   assert.throws(() => validarData('2026-09-29', cfg, new Date(2026, 8, 28, 20), true), /futuro/)
-  assert.equal(validarData('2026-09-07', cfg, new Date(2026, 8, 28, 20), true).length, 1)
+})
+
+test('layout: coluna oculta vira dia não útil; domingo é não útil mesmo visível', () => {
+  const g = gridMes(2026, 9, [['1', 'X']])
+  const l = detectarLayout('Setembro', g, 2026, 9, new Set([6 + 7])) // coluna do dia 7 oculta
+  assert.equal(l.diasNaoUteis.get(7), 'coluna oculta')
+  assert.equal(l.diasNaoUteis.get(27), 'domingo')
+  assert.equal(l.diasNaoUteis.has(28), false)
 })
 
 // ── fluxo completo (simular + escrever) ─────────────────────────────────────
@@ -185,8 +192,19 @@ function cenario() {
     ['143', 'RENATO FORCADO BUENO'],                         // fora do ponto, código forçado AT
     ['1069', 'NELSON AUSENTE CAMPOS'],                      // fora do ponto, vazio
   ])
+  const outubro = gridMes(2026, 10, [['374', 'JOAO EXEMPLO DA SILVA']])
   const base = [['Nº', 'ADM', 'Colaborador'], ['1', '9999', 'FELIPE SEMLINHA DE FARIA']]
-  return new MemoryGateway({ 'BASE DE DADOS': base, Setembro: setembro, CONFIG_GERAL: CFG_GRIDS.geral, CONFIG_HORARIOS: CFG_GRIDS.horarios, CONFIG_EXCECOES: CFG_GRIDS.excecoes, CONFIG_APELIDOS: CFG_GRIDS.apelidos, CONFIG_FERIADOS: CFG_GRIDS.feriados })
+  const gw = new MemoryGateway({ 'BASE DE DADOS': base, Setembro: setembro, Outubro: outubro, CONFIG_GERAL: CFG_GRIDS.geral, CONFIG_HORARIOS: CFG_GRIDS.horarios, CONFIG_EXCECOES: CFG_GRIDS.excecoes, CONFIG_APELIDOS: CFG_GRIDS.apelidos })
+  // Como na planilha real: domingos e o feriado de 7/09 com a coluna oculta
+  // (dia d fica na coluna 6 + d).
+  gw.ocultas['Setembro'] = new Set([6, 7, 13, 20, 27].map(d => 6 + d))
+  gw.ocultas['Outubro'] = new Set([4, 11, 12, 18, 25].map(d => 6 + d))
+  return gw
+}
+
+// O fixture é de 28/09; troca a data do id pra simular outros dias.
+function htmlDoDia(data: string): string {
+  return fs.readFileSync(FIXTURE, 'utf-8').replace(/dia-resumido-2026-09-28/g, `dia-resumido-${data}`)
 }
 
 const NOITE = new Date(2026, 8, 28, 19, 0)
@@ -250,7 +268,7 @@ test('regras: salva na planilha e a simulação passa a usar o horário individu
   const gw = cenario()
   const { regras } = await carregarRegras(gw)
   assert.equal(regras.geral.entrada_padrao, '08:00')
-  assert.equal(regras.feriados[0]!.data, '2026-09-07') // dd/mm/aaaa da planilha → ISO na tela
+  assert.equal(regras.excecoes[0]!.data, '2026-09-28') // dd/mm/aaaa da planilha → ISO na tela
 
   regras.horarios.push({ adm: '2376', entrada: '09:00', saida: '', tolerancia_min: '', vigencia_inicio: '2026-09-01', vigencia_fim: '', obs: 'entra 9h' })
   const v = await salvarRegras(gw, regras)
@@ -288,7 +306,7 @@ test('regras: avisa ADM que não existe na BASE DE DADOS', () => {
   const v = validarRegras({
     geral: { tolerancia_min: '5', entrada_padrao: '08:00', horario_corte: '18:00' },
     horarios: [{ adm: '123456', entrada: '09:00', saida: '', tolerancia_min: '', vigencia_inicio: '', vigencia_fim: '', obs: '' }],
-    excecoes: [], apelidos: [], feriados: [],
+    excecoes: [], apelidos: [],
   }, [{ adm: '1', nome: 'X', setor: '', ativo: true }])
   assert.deepEqual(v.erros, [])
   assert.match(v.avisos[0]!, /123456/)
@@ -316,4 +334,78 @@ test('desfazer apaga só o que o bot gravou e mantém o que alguém mudou depois
   // Desfazer de novo não apaga nada (as células já estão vazias ou mudadas).
   const d2 = await desfazerEscrita(gw, plano.aba, r.escritas)
   assert.deepEqual(d2.apagadas, [])
+})
+
+// ── feriados (colunas ocultas) e conferência da semana ─────────────────────
+
+test('feriado com coluna oculta não é preenchido nem com "forçar"', async () => {
+  const gw = cenario()
+  await assert.rejects(simular(gw, { data: '2026-09-07', html: htmlDoDia('2026-09-07'), now: NOITE, forcar: true }), /coluna oculta.*feriado/)
+  await assert.rejects(simular(gw, { data: '2026-09-27', html: htmlDoDia('2026-09-27'), now: NOITE, forcar: true }), /domingo/)
+})
+
+test('semana: um plano por dia, pula domingo/feriado, cruza o mês e aponta dia repetido', async () => {
+  const gw = cenario()
+  const dias = ['2026-09-25', '2026-09-27', '2026-09-28', '2026-09-30', '2026-10-01', '2026-09-07']
+  const lote = await simularLote(gw, {
+    htmls: [...dias.map(d => ({ arquivo: `${d}.html`, html: htmlDoDia(d) })), { arquivo: 'copia.html', html: htmlDoDia('2026-09-28') }],
+    now: new Date(2026, 9, 1, 19, 0),
+  })
+
+  assert.deepEqual(lote.planos.map(p => `${p.data}@${p.aba}`), ['2026-09-25@Setembro', '2026-09-28@Setembro', '2026-09-30@Setembro', '2026-10-01@Outubro'])
+  assert.deepEqual(lote.pulados.map(p => p.data), ['2026-09-07', '2026-09-27'])
+  assert.equal(lote.erros.length, 1)
+  assert.match(lote.erros[0]!.motivo, /repetido.*2026-09-28\.html/)
+  // Cada dia na sua coluna: 25/09 = AE, 30/09 = AJ, 01/10 = G.
+  assert.ok(lote.planos[0]!.escritas.every(e => e.celula.startsWith('AE')))
+  assert.ok(lote.planos[2]!.escritas.every(e => e.celula.startsWith('AJ')))
+  assert.deepEqual(lote.planos[3]!.escritas.map(e => e.celula), ['G8'])
+})
+
+// Só as células com conteúdo — no grid em memória, "nunca escrita" (undefined)
+// e "apagada" ('') são a mesma coisa que numa planilha: célula vazia.
+function preenchidas(gw: MemoryGateway): string[] {
+  const out: string[] = []
+  for (const [aba, grid] of Object.entries(gw.abas)) {
+    grid.forEach((linha, r) => linha.forEach((v, c) => { if (v) out.push(`${aba}!${r + 1},${c + 1}=${v}`) }))
+  }
+  return out
+}
+
+test('semana: escreve todos os dias e o desfazer volta tudo', async () => {
+  const gw = cenario()
+  const antes = preenchidas(gw)
+  const lote = await simularLote(gw, {
+    htmls: ['2026-09-29', '2026-09-30', '2026-10-01'].map(d => ({ arquivo: d, html: htmlDoDia(d) })),
+    now: new Date(2026, 9, 1, 19, 0),
+  })
+  const { dias, erro } = await executarEscritaLote(gw, lote.planos)
+  assert.equal(erro, null)
+  assert.deepEqual(dias.map(d => d.data), ['2026-09-29', '2026-09-30', '2026-10-01'])
+  assert.notDeepEqual(preenchidas(gw), antes)
+
+  for (const d of dias) await desfazerEscrita(gw, d.aba, d.escritas)
+  assert.deepEqual(preenchidas(gw), antes)
+})
+
+test('semana: falha no meio devolve os dias já gravados (pro Desfazer)', async () => {
+  const gw = cenario()
+  const lote = await simularLote(gw, {
+    htmls: ['2026-09-29', '2026-10-01'].map(d => ({ arquivo: d, html: htmlDoDia(d) })),
+    now: new Date(2026, 9, 1, 19, 0),
+  })
+  const escreverOriginal = gw.escrever.bind(gw)
+  gw.escrever = async (aba, valores) => {
+    if (aba === 'Outubro') throw new Error('sem rede')
+    return escreverOriginal(aba, valores)
+  }
+  const { dias, erro } = await executarEscritaLote(gw, lote.planos)
+  assert.deepEqual(dias.map(d => d.data), ['2026-09-29'])
+  assert.match(erro!, /2026-10-01.*sem rede/)
+})
+
+test('regras: mostra os feriados encontrados (colunas ocultas que não são domingo)', async () => {
+  const gw = cenario()
+  const r = await carregarRegras(gw, '2026-09-29')
+  assert.deepEqual(r.feriados, [{ aba: 'Setembro', dias: [7], erro: null }, { aba: 'Outubro', dias: [12], erro: null }])
 })

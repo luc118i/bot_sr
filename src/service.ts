@@ -4,7 +4,7 @@ import { getConfig } from './config'
 import { getRelatoriosDir, logger } from './logger'
 import { ABAS_CONFIG, CABECALHOS_CONFIG, parseConfigPlanilha, type OverridesGeral } from './core/configPlanilha'
 import { detectarLayout, nomeAbaDoMes } from './core/layoutMes'
-import { montarPlano, type Plano } from './core/planner'
+import { DiaNaoUtilError, montarPlano, type Plano } from './core/planner'
 import { parsePontoHtml } from './core/pontoParser'
 import { relatorioTexto, type ModoRelatorio } from './core/relatorio'
 import { parseDataISO } from './core/tempo'
@@ -21,6 +21,22 @@ export interface OpcoesSimulacao {
   now?: Date
 }
 
+export interface OpcoesLote {
+  htmls: { arquivo: string; html: string }[] // um HTML por dia; a data vem de dentro do HTML
+  forcar?: boolean
+  overrides?: OverridesGeral
+  now?: Date
+}
+
+// Conferência de vários dias (ex.: a semana). Cada dia vira um plano próprio;
+// um dia com problema não impede os outros — ele só aparece em `erros`.
+export interface Lote {
+  geradoEm: string
+  planos: Plano[]
+  pulados: { data: string; arquivo: string; motivo: string }[] // domingos e colunas ocultas (feriados)
+  erros: { data: string | null; arquivo: string; motivo: string }[]
+}
+
 export function abrirGateway(xlsx?: string): SheetGateway {
   if (xlsx) return new XlsxGateway(xlsx)
   const cfg = getConfig()
@@ -28,52 +44,96 @@ export function abrirGateway(xlsx?: string): SheetGateway {
   return new GoogleSheetsGateway(cfg.spreadsheet_id, cfg.google_service_account_json_b64)
 }
 
-export async function simular(gw: SheetGateway, op: OpcoesSimulacao): Promise<Plano> {
-  const d = parseDataISO(op.data)
-  logger.info(`[simular] ${op.data} em ${gw.descricao}`)
-
-  // A planilha é de um ano só (uma aba por mês, sem ano no nome da aba).
-  const titulo = await gw.titulo()
+// A planilha é de um ano só (uma aba por mês, sem ano no nome da aba).
+function conferirAno(titulo: string, ano: number): string | null {
   const anoTitulo = /\b(20\d{2})\b/.exec(titulo)?.[1]
-  if (anoTitulo && +anoTitulo !== d.ano) {
-    throw new Error(`A planilha "${titulo}" é de ${anoTitulo}, mas a data pedida é de ${d.ano}.`)
-  }
+  return anoTitulo && +anoTitulo !== ano ? `A planilha "${titulo}" é de ${anoTitulo}, mas a data pedida é de ${ano}.` : null
+}
 
-  const abas = await gw.listarAbas()
-  const [geral, horarios, excecoes, apelidos, feriados] = await Promise.all(
-    Object.values(ABAS_CONFIG).map(a => gw.lerGrid(a)),
-  )
-  if (!geral && !(op.overrides?.entradaPadrao && op.overrides.toleranciaMin !== undefined)) {
+async function carregarConfig(gw: SheetGateway, overrides?: OverridesGeral) {
+  const [geral, horarios, excecoes, apelidos] = await Promise.all(Object.values(ABAS_CONFIG).map(a => gw.lerGrid(a)))
+  if (!geral && !(overrides?.entradaPadrao && overrides.toleranciaMin !== undefined)) {
     throw new Error(`Aba ${ABAS_CONFIG.geral} não existe — abra "Horários e regras" e preencha entrada padrão, tolerância e horário de corte.`)
   }
-  const cfg = parseConfigPlanilha(
-    { geral: geral ?? null, horarios: horarios ?? null, excecoes: excecoes ?? null, apelidos: apelidos ?? null, feriados: feriados ?? null },
-    op.overrides,
+  return parseConfigPlanilha(
+    { geral: geral ?? null, horarios: horarios ?? null, excecoes: excecoes ?? null, apelidos: apelidos ?? null },
+    overrides,
   )
+}
 
-  const aba = nomeAbaDoMes(abas, d.mes)
+// Aba do mês + layout (com as colunas ocultas = dias não úteis).
+export async function carregarMes(gw: SheetGateway, abas: string[], ano: number, mes: number) {
+  const aba = nomeAbaDoMes(abas, mes)
   const grid = (await gw.lerGrid(aba))!
-  const layout = detectarLayout(aba, grid, d.ano, d.mes)
+  const layout = detectarLayout(aba, grid, ano, mes, await gw.colunasOcultas(aba))
+  return { grid, layout }
+}
+
+export async function simularLote(gw: SheetGateway, op: OpcoesLote): Promise<Lote> {
+  const now = op.now ?? new Date()
+  const lote: Lote = { geradoEm: now.toISOString(), planos: [], pulados: [], erros: [] }
+
+  // 1. Lê cada HTML e descobre de que dia ele é.
+  const dias: { data: string; arquivo: string; parse: ReturnType<typeof parsePontoHtml> }[] = []
+  for (const { arquivo, html } of op.htmls) {
+    const parse = parsePontoHtml(html)
+    if (!parse.registros.length) {
+      lote.erros.push({ data: null, arquivo, motivo: `Nenhum colaborador lido. ${parse.avisos.join(' ')}` })
+    } else if (!parse.data) {
+      lote.erros.push({ data: null, arquivo, motivo: `Não deu pra saber de que dia é o HTML. ${parse.avisos.join(' ')}` })
+    } else if (dias.some(d => d.data === parse.data)) {
+      const outro = dias.find(d => d.data === parse.data)!.arquivo
+      lote.erros.push({ data: parse.data, arquivo, motivo: `Dia ${parse.data} repetido (também em "${outro}") — só o primeiro foi usado.` })
+    } else {
+      dias.push({ data: parse.data, arquivo, parse })
+    }
+  }
+  dias.sort((a, b) => a.data.localeCompare(b.data))
+  if (!dias.length) return lote
+  logger.info(`[simular] ${dias.map(d => d.data).join(', ')} em ${gw.descricao}`)
+
+  // 2. Configuração e BASE DE DADOS uma vez só; cada mês é lido uma vez.
+  const titulo = await gw.titulo()
+  const abas = await gw.listarAbas()
+  const cfg = await carregarConfig(gw, op.overrides)
   // BASE DE DADOS só diferencia "tem na base mas sem linha no mês" de "não existe".
   const base = await lerColaboradores(gw, abas)
+  const meses = new Map<string, Promise<Awaited<ReturnType<typeof carregarMes>>>>()
 
-  const { data: dataPonto, registros, avisos: avisosParse } = parsePontoHtml(op.html)
-  if (registros.length === 0) {
-    throw new Error(`Nenhum colaborador lido do HTML do ponto. ${avisosParse.join(' ')}`)
+  for (const { data, arquivo, parse } of dias) {
+    try {
+      const d = parseDataISO(data)
+      const erroAno = conferirAno(titulo, d.ano)
+      if (erroAno) throw new Error(erroAno)
+      const chave = `${d.ano}-${d.mes}`
+      if (!meses.has(chave)) meses.set(chave, carregarMes(gw, abas, d.ano, d.mes))
+      const { grid, layout } = await meses.get(chave)!
+      const plano = montarPlano({ data, registros: parse.registros, layout, grid, cfg, base, now, forcar: op.forcar })
+      plano.avisos.unshift(...parse.avisos)
+      lote.planos.push(plano)
+      logger.info(`[simular] ${data}: ${parse.registros.length} do ponto, resumo ${JSON.stringify(plano.resumo)}`)
+    } catch (err: any) {
+      if (err instanceof DiaNaoUtilError) lote.pulados.push({ data, arquivo, motivo: err.message })
+      else lote.erros.push({ data, arquivo, motivo: err.message })
+    }
   }
+  return lote
+}
+
+// Um dia só (CLI e testes). Mesmas regras do lote, mas qualquer problema vira erro.
+export async function simular(gw: SheetGateway, op: OpcoesSimulacao): Promise<Plano> {
+  const erroAno = conferirAno(await gw.titulo(), parseDataISO(op.data).ano)
+  if (erroAno) throw new Error(erroAno)
   // O HTML diz de que dia é — rodar o ponto de um dia na coluna de outro seria
   // um erro silencioso e difícil de perceber na planilha.
-  if (!dataPonto) {
-    throw new Error(`Não deu pra saber de que dia é o HTML do ponto. ${avisosParse.join(' ')}`)
-  }
-  if (dataPonto !== op.data) {
+  const dataPonto = parsePontoHtml(op.html).data
+  if (dataPonto && dataPonto !== op.data) {
     throw new Error(`O HTML do ponto é do dia ${dataPonto}, mas o dia escolhido é ${op.data}.`)
   }
-
-  const plano = montarPlano({ data: op.data, registros, layout, grid, cfg, base, now: op.now, forcar: op.forcar })
-  plano.avisos.unshift(...avisosParse)
-  logger.info(`[simular] ${op.data}: ${registros.length} do ponto, resumo ${JSON.stringify(plano.resumo)}`)
-  return plano
+  const lote = await simularLote(gw, { htmls: [{ arquivo: 'ponto', html: op.html }], forcar: op.forcar, overrides: op.overrides, now: op.now })
+  const problema = lote.erros[0] ?? lote.pulados[0]
+  if (problema) throw new Error(problema.motivo)
+  return lote.planos[0]!
 }
 
 export interface ResultadoEscrita {
@@ -96,6 +156,25 @@ export async function executarEscrita(gw: SheetGateway, plano: Plano): Promise<R
   await gw.escrever(plano.aba, escritas.map(e => ({ celula: e.celula, valor: e.codigo })))
   logger.info(`[escrever] ${plano.data} aba ${plano.aba}: ${escritas.length} escritas, ${puladas.length} puladas (preenchidas nesse meio tempo)`)
   return { escritas, puladas }
+}
+
+export interface EscritaDoDia extends ResultadoEscrita { data: string; aba: string; plano: Plano }
+
+// Grava os dias em ordem. Se um falhar (rede, permissão), para ali e devolve os
+// que JÁ foram gravados junto com o erro — sem isso o Desfazer não saberia
+// quais células apagar dos dias anteriores.
+export async function executarEscritaLote(gw: SheetGateway, planos: Plano[]): Promise<{ dias: EscritaDoDia[]; erro: string | null }> {
+  const dias: EscritaDoDia[] = []
+  for (const plano of planos) {
+    if (!plano.escritas.length) continue
+    try {
+      dias.push({ data: plano.data, aba: plano.aba, plano, ...(await executarEscrita(gw, plano)) })
+    } catch (err: any) {
+      logger.error(`[escrever] ${plano.data}: ${err.message}`)
+      return { dias, erro: `Falhou ao gravar ${plano.data}: ${err.message}. Dias anteriores já gravados: ${dias.map(d => d.data).join(', ') || 'nenhum'}.` }
+    }
+  }
+  return { dias, erro: null }
 }
 
 export interface ResultadoDesfazer {

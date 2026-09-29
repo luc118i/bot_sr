@@ -6,7 +6,7 @@ contextBridge.exposeInMainWorld('agent', {
   pickJsonFile: () => ipcRenderer.invoke('pick-json-file'),
   testConnection: (cfg: unknown) => ipcRenderer.invoke('test-connection', cfg),
   criarAbasConfig: () => ipcRenderer.invoke('criar-abas-config'),
-  pickHtmlFile: () => ipcRenderer.invoke('pick-html-file'),
+  pickHtmlFiles: () => ipcRenderer.invoke('pick-html-files'),
   simular: (params: unknown) => ipcRenderer.invoke('simular', params),
   escrever: () => ipcRenderer.invoke('escrever'),
   desfazer: () => ipcRenderer.invoke('desfazer'),

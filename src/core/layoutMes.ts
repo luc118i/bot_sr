@@ -25,6 +25,9 @@ export interface LayoutMes {
   colAdm: number
   colNome: number
   colunaDoDia: Map<number, number>
+  // Dia → motivo de não ser útil. A planilha mantém o calendário ESCONDENDO a
+  // coluna do dia (domingos e feriados); domingo é não útil mesmo visível.
+  diasNaoUteis: Map<number, 'domingo' | 'coluna oculta'>
   linhas: LinhaColaborador[]
   avisos: string[]
 }
@@ -43,7 +46,7 @@ export function nomeAbaDoMes(abas: string[], mes: number): string {
   return achadas[0]!
 }
 
-export function detectarLayout(aba: string, grid: string[][], ano: number, mes: number): LayoutMes {
+export function detectarLayout(aba: string, grid: string[][], ano: number, mes: number, ocultas: Set<number> = new Set()): LayoutMes {
   const avisos: string[] = []
   const cell = (r: number, c: number) => String(grid[r - 1]?.[c - 1] ?? '').trim()
 
@@ -89,6 +92,12 @@ export function detectarLayout(aba: string, grid: string[][], ano: number, mes: 
   const colunaDoDia = new Map<number, number>()
   for (let d = 1; d <= nDias; d++) colunaDoDia.set(d, primeiraCol + d - 1)
 
+  const diasNaoUteis = new Map<number, 'domingo' | 'coluna oculta'>()
+  for (let d = 1; d <= nDias; d++) {
+    if (diaDaSemana({ ano, mes, dia: d }) === 0) diasNaoUteis.set(d, 'domingo')
+    else if (ocultas.has(colunaDoDia.get(d)!)) diasNaoUteis.set(d, 'coluna oculta')
+  }
+
   // 3. Linhas de colaborador: toda linha abaixo do cabeçalho com ADM preenchido.
   const linhas: LinhaColaborador[] = []
   for (let r = linhaCabecalho + 1; r <= grid.length; r++) {
@@ -126,5 +135,5 @@ export function detectarLayout(aba: string, grid: string[][], ano: number, mes: 
     if (ls.length > 1) avisos.push(`[${aba}] ADM ${adm} aparece em mais de uma linha (${ls.join(', ')}) — vai para revisão.`)
   }
 
-  return { aba, linhaCabecalho, colAdm, colNome, colunaDoDia, linhas, avisos }
+  return { aba, linhaCabecalho, colAdm, colNome, colunaDoDia, diasNaoUteis, linhas, avisos }
 }
