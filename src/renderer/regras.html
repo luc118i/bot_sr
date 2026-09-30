@@ -3,75 +3,84 @@
 <head>
   <meta charset="UTF-8" />
   <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'" />
-  <title>Frequência Agent — Horários e regras</title>
+  <title>SR_dados — Horários e regras</title>
+  <link rel="stylesheet" href="sr.css" />
   <style>
-    * { box-sizing: border-box; margin: 0; padding: 0; }
-    body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: #f8fafc; color: #1e293b; font-size: 13px; }
-    .header { background: #1e293b; color: white; padding: 14px 24px; }
-    .header h1 { font-size: 15px; font-weight: 600; }
-    .header p { font-size: 11px; color: #94a3b8; margin-top: 2px; }
-    main { padding: 16px 24px 90px; }
-    section { background: white; border: 1px solid #e2e8f0; border-radius: 8px; padding: 14px 16px; margin-bottom: 14px; }
-    h2 { font-size: 12px; text-transform: uppercase; letter-spacing: .05em; color: #475569; margin-bottom: 4px; }
-    .hint { font-size: 11px; color: #64748b; margin-bottom: 10px; }
+    main { max-width: 1040px; margin: 0 auto; padding: 24px 28px 100px; display: flex; flex-direction: column; gap: 20px; }
+    .titulo h1 { font-size: 24px; font-weight: 600; letter-spacing: -.02em; }
+    .titulo p { font-size: 14px; color: var(--texto-2); margin-top: 4px; }
+    section { background: var(--superficie); border: 1px solid var(--borda); border-radius: 20px; box-shadow: var(--sombra-1); padding: 22px 24px; }
+    section h2 { font-size: 16px; font-weight: 600; letter-spacing: -.01em; }
+    .hint { font-size: 13px; color: var(--texto-2); margin: 4px 0 16px; line-height: 1.5; }
     .row { display: flex; gap: 16px; flex-wrap: wrap; }
-    .field label { display: block; font-size: 11px; font-weight: 600; color: #64748b; margin-bottom: 4px; }
-    input, select { padding: 5px 7px; border: 1px solid #d1d5db; border-radius: 5px; font-size: 12px; background: white; width: 100%; font-family: inherit; }
-    input:invalid { border-color: #f87171; }
-    table { width: 100%; border-collapse: collapse; }
-    th { text-align: left; font-size: 11px; color: #475569; font-weight: 600; padding: 4px 6px; background: #f1f5f9; }
-    td { padding: 4px 6px; border-bottom: 1px solid #f1f5f9; vertical-align: middle; }
-    td.del { width: 30px; text-align: center; }
-    .vazio { color: #94a3b8; font-size: 12px; padding: 8px 6px; }
-    button { padding: 6px 12px; border-radius: 6px; font-size: 12px; font-weight: 500; cursor: pointer; border: 1px solid #d1d5db; background: white; color: #1e293b; }
-    button.primary { background: #1e293b; color: white; border-color: #1e293b; }
-    button.x { border: none; background: none; color: #94a3b8; font-size: 16px; padding: 0 4px; }
-    button.x:hover { color: #b91c1c; }
-    .chips { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+    .field label { display: block; font-size: 13px; font-weight: 500; margin-bottom: 6px; }
+    .field .hint { margin: 6px 0 0; font-size: 12px; color: var(--texto-3); }
+    table { margin-top: 4px; }
+    th { padding: 0 8px 8px 0; }
+    td { padding: 6px 8px 6px 0; vertical-align: middle; }
+    td input, td select { height: 36px; }
+    td.del { width: 36px; text-align: center; }
+    section .vazio { display: block; text-align: left; padding: 4px 0 2px; font-size: 13px; color: var(--texto-3); }
+    button.x { width: 32px; height: 32px; border-radius: 8px; border: 0; background: none; color: #8A8A92; font-size: 18px; cursor: pointer; transition: background .15s, color .15s; }
+    button.x:hover { background: #FDECEA; color: var(--erro); }
+    button.add { margin-top: 12px; height: 36px; padding: 0 14px; border-radius: 10px; border: 1px dashed var(--borda-forte); background: var(--superficie-2); font-size: 14px; font-weight: 500; font-family: inherit; color: var(--texto); cursor: pointer; transition: background .15s, border-color .15s; }
+    button.add:hover { background: var(--superficie); border-color: #C9C9C4; }
+    .chips { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
     #setoresSel { display: contents; }
-    .chip { display: inline-flex; align-items: center; gap: 2px; background: #e2e8f0; color: #1e293b; border-radius: 99px; padding: 3px 4px 3px 10px; font-size: 12px; font-weight: 500; }
-    .chip.vazio-chip { background: none; border: 1px dashed #cbd5e1; color: #64748b; padding: 3px 10px; }
-    button.add { margin-top: 8px; }
-    button:disabled { opacity: .45; cursor: default; }
-    .bar { position: fixed; left: 0; right: 0; bottom: 0; background: white; border-top: 1px solid #e2e8f0; padding: 10px 24px; display: flex; gap: 10px; align-items: center; }
-    .bar .sp { flex: 1; font-size: 12px; color: #b45309; }
-    .msg { padding: 10px 12px; border-radius: 6px; font-size: 12px; margin-bottom: 12px; white-space: pre-wrap; }
-    .msg.ok { background: #dcfce7; color: #166534; }
-    .msg.err { background: #fee2e2; color: #991b1b; }
-    .msg.warn { background: #fffbeb; color: #92400e; border: 1px solid #fde68a; }
-    .msg.info { background: #e0f2fe; color: #075985; }
+    .chips .chip { height: 32px; display: inline-flex; align-items: center; gap: 2px; background: var(--acao-suave); border: 0; color: var(--acao-texto); border-radius: 99px; padding: 0 4px 0 12px; font-size: 13px; font-weight: 500; cursor: default; }
+    .chips .chip button.x { width: 24px; height: 24px; font-size: 15px; color: var(--acao-texto); }
+    .chips .chip.vazio-chip { background: none; border: 1px dashed var(--borda-forte); color: var(--texto-3); padding: 0 12px; }
+    #setorAdd { width: 240px; height: 32px; }
+    #feriados div { padding: 8px 0; border-top: 1px solid #EEEEEB; font-size: 14px; }
+    #feriados div:first-child { border-top: 0; }
+    .msg { padding: 12px 14px; border-radius: 12px; font-size: 13px; line-height: 1.5; white-space: pre-wrap; border: 1px solid var(--borda); background: var(--superficie-2); animation: entrar .2s ease-out both; }
+    .msg.ok { background: var(--sucesso-suave); border-color: var(--sucesso-borda); color: #146038; }
+    .msg.err { background: var(--erro-suave); border-color: var(--erro-borda); color: var(--erro); }
+    .msg.warn { background: var(--atencao-suave); border-color: var(--atencao-borda); color: var(--atencao); }
+    .msg.info { background: #F5F8FF; border-color: var(--acao-borda); color: var(--acao-texto); }
+    #msgs { display: flex; flex-direction: column; gap: 10px; }
+    #msgs:empty { display: none; }
+    #msgs > button { align-self: flex-start; }
+    .bar { position: fixed; left: 0; right: 0; bottom: 0; display: flex; align-items: center; gap: 10px; padding: 12px 28px; background: rgba(255, 255, 255, .96); border-top: 1px solid var(--borda); backdrop-filter: blur(8px); z-index: 5; }
+    .bar .sp { flex-grow: 1; font-size: 13px; color: var(--atencao); }
+    .bar button { height: 40px; padding: 0 16px; border-radius: 10px; border: 1px solid var(--borda-forte); background: var(--superficie); font-size: 14px; font-weight: 500; font-family: inherit; color: var(--texto); cursor: pointer; transition: background .15s; }
+    .bar button:hover { background: #F0F0EE; }
+    .bar button.primary { background: var(--acao); border-color: var(--acao); color: #FFFFFF; font-weight: 600; }
+    .bar button.primary:hover { background: var(--acao-escura); }
+    .bar button:disabled { background: #E9E9E6; border-color: #E9E9E6; color: #8A8A92; cursor: default; }
   </style>
 </head>
 <body>
-  <div class="header">
-    <h1>Horários e regras</h1>
-    <p>Salvo nesta máquina (arquivo regras.json) — a planilha de frequência não recebe nenhuma configuração.</p>
-  </div>
+  <header class="topo">
+    <div class="marca">
+      <span class="logo"><svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="#fff" stroke-width="1.6" stroke-linecap="round"><path d="M3 5h10M3 8h6M3 11h8"/></svg></span>
+      Horários e regras
+    </div>
+    <span class="ter" style="font-size:13px">Salvo nesta máquina · a planilha não recebe configuração</span>
+  </header>
 
   <main>
-    <div id="msgs"><div class="msg info">Carregando...</div></div>
+    <div id="msgs"><div class="msg info">Carregando…</div></div>
 
     <section>
       <h2>Padrão</h2>
-      <p class="hint">Vale para todo mundo que não tiver horário individual. Entrada até <b>padrão + tolerância</b> = "." ; depois = "P".</p>
+      <p class="hint">Vale para todo mundo que não tiver horário individual. Entrada até <b>padrão + tolerância</b> = <span class="mono">.</span> · depois = <span class="mono">P</span>.</p>
       <div class="row">
-        <div class="field" style="width:140px"><label>Entrada padrão</label><input type="time" id="entrada_padrao" /></div>
-        <div class="field" style="width:140px"><label>Tolerância (min)</label><input type="number" min="0" max="120" id="tolerancia_min" /></div>
-        <div class="field" style="width:220px"><label>Horário de corte</label><input type="time" id="horario_corte" />
-          <div class="hint" style="margin:3px 0 0">Antes disso o dia de hoje não é classificado.</div></div>
+        <div class="field" style="width:160px"><label for="entrada_padrao">Entrada padrão</label><input type="time" id="entrada_padrao" /></div>
+        <div class="field" style="width:160px"><label for="tolerancia_min">Tolerância (min)</label><input type="number" min="0" max="120" id="tolerancia_min" /></div>
+        <div class="field" style="width:240px"><label for="horario_corte">Horário de corte</label><input type="time" id="horario_corte" />
+          <div class="hint">Antes disso o dia de hoje não é classificado.</div></div>
       </div>
     </section>
 
     <section>
       <h2>Horários individuais</h2>
       <p class="hint">Quem entra em horário diferente do padrão. Tolerância vazia = usa a padrão. Vigência vazia = sem limite; use datas para mudar o horário de alguém sem perder o histórico.</p>
-      <div class="row" style="margin-bottom:8px">
-        <div class="field">
-          <label>Meus setores — filtra a lista de colaboradores (nenhum = todos)</label>
-          <div class="chips">
-            <span id="setoresSel"></span>
-            <select id="setorAdd" style="width:240px"></select>
-          </div>
+      <div class="field" style="margin-bottom:12px">
+        <label>Meus setores <span class="ter" style="font-weight:400">— filtra a lista de colaboradores (nenhum = todos)</span></label>
+        <div class="chips">
+          <span id="setoresSel"></span>
+          <select id="setorAdd" aria-label="Adicionar setor"></select>
         </div>
       </div>
       <div id="t-horarios"></div>
@@ -90,9 +99,9 @@
     </section>
 
     <section>
-      <h2>Feriados (lidos da planilha)</h2>
-      <p class="hint">O bot considera feriado toda coluna de dia <b>oculta</b> que não seja domingo — é assim que a planilha já marca os dias não trabalhados. Para cadastrar um feriado, esconda a coluna do dia na aba do mês. Esses dias (e os domingos) nunca são preenchidos.</p>
-      <div id="feriados" class="vazio">Carregando...</div>
+      <h2>Feriados <span class="ter" style="font-weight:400;font-size:14px">· lidos da planilha</span></h2>
+      <p class="hint">Toda coluna de dia <b>oculta</b> que não seja domingo é feriado — é assim que a planilha já marca os dias não trabalhados. Para cadastrar um feriado, esconda a coluna do dia na aba do mês.</p>
+      <div id="feriados" class="vazio">Carregando…</div>
     </section>
 
     <datalist id="colabs"></datalist>
@@ -112,8 +121,8 @@
 
     // Cada tabela: colunas → tipo do input. 'colab' mostra "ADM — NOME" e guarda só o ADM.
     const TABELAS = {
-      horarios: [['adm', 'Colaborador', 'colab', 320], ['entrada', 'Entrada', 'time', 110], ['tolerancia_min', 'Tol. (min)', 'number', 90],
-        ['vigencia_inicio', 'Vigência início', 'date', 140], ['vigencia_fim', 'Vigência fim', 'date', 140], ['obs', 'Obs.', 'text']],
+      horarios: [['adm', 'Colaborador', 'colab', 250], ['entrada', 'Entrada', 'time', 104], ['tolerancia_min', 'Tol. (min)', 'number', 84],
+        ['vigencia_inicio', 'Vigência início', 'date', 146], ['vigencia_fim', 'Vigência fim', 'date', 146], ['obs', 'Obs.', 'text']],
       excecoes: [['data', 'Data', 'date', 140], ['adm', 'Colaborador', 'colab', 320], ['entrada_prevista', 'Entrada prevista', 'time', 120],
         ['codigo', 'Código', 'codigo', 90], ['obs', 'Obs.', 'text']],
       apelidos: [['nome_no_ponto', 'Nome no ponto', 'text', 320], ['adm', 'Colaborador na planilha', 'colab', 320], ['obs', 'Obs.', 'text']],

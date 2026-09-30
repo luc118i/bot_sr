@@ -1,0 +1,181 @@
+/* SR_dados — sistema de design (o mesmo do canvas aprovado).
+   Uma cor de ação (azul); verde, âmbar e vermelho só para estado.
+   Fontes embutidas (o app não carrega nada da internet). */
+
+@font-face { font-family: 'Geist'; src: url('fonts/Geist-Variable.woff2') format('woff2'); font-weight: 100 900; font-display: swap; }
+@font-face { font-family: 'Geist Mono'; src: url('fonts/GeistMono-Variable.woff2') format('woff2'); font-weight: 100 900; font-display: swap; }
+
+:root {
+  --fundo: #F4F4F2;
+  --superficie: #FFFFFF;
+  --superficie-2: #FAFAF8;
+  --realce: #F1F1EE;
+  --borda: #E6E6E3;
+  --borda-forte: #E0E0DC;
+  --texto: #141416;
+  --texto-2: #55555D;
+  --texto-3: #6B6B73;
+  --acao: #2451D6;
+  --acao-escura: #1D44B8;
+  --acao-texto: #1A3DA8;
+  --acao-suave: #EEF2FD;
+  --acao-borda: #D5DEF8;
+  --sucesso: #177245;
+  --sucesso-ponto: #1F9D57;
+  --sucesso-suave: #EAF6EF;
+  --sucesso-borda: #CDE9D8;
+  --atencao: #8A4F00;
+  --atencao-ponto: #E3A13B;
+  --atencao-suave: #FEF8EE;
+  --atencao-borda: #F6E0B8;
+  --erro: #A0271C;
+  --erro-ponto: #B42318;
+  --erro-suave: #FEF4F3;
+  --erro-borda: #F6D2CE;
+  --sombra-1: 0 1px 2px rgba(20, 20, 22, .04);
+  --sombra-2: 0 1px 2px rgba(20, 20, 22, .04), 0 8px 24px rgba(20, 20, 22, .06);
+  --sombra-3: 0 12px 32px rgba(20, 20, 22, .14);
+  --foco: 0 0 0 3px rgba(36, 81, 214, .28);
+  --mono: 'Geist Mono', ui-monospace, Consolas, monospace;
+}
+
+* { box-sizing: border-box; }
+html, body { margin: 0; padding: 0; }
+body {
+  font-family: 'Geist', system-ui, 'Segoe UI', sans-serif;
+  font-size: 14px;
+  line-height: 1.45;
+  color: var(--texto);
+  background: var(--fundo);
+  -webkit-font-smoothing: antialiased;
+}
+h1, h2, h3, p { margin: 0; }
+a { color: var(--acao); text-decoration: none; cursor: pointer; }
+a:hover { color: var(--acao-escura); }
+[hidden] { display: none !important; }
+.mono { font-family: var(--mono); }
+.sec { color: var(--texto-2); }
+.ter { color: var(--texto-3); }
+
+/* ── Cabeçalho ─────────────────────────────────────────── */
+.topo {
+  height: 60px; padding: 0 28px; display: flex; align-items: center; justify-content: space-between; gap: 16px;
+  border-bottom: 1px solid var(--borda); background: rgba(244, 244, 242, .92); position: sticky; top: 0; z-index: 5;
+  backdrop-filter: saturate(1.4) blur(10px);
+}
+.marca { display: flex; align-items: center; gap: 10px; font-size: 16px; font-weight: 600; letter-spacing: -.01em; }
+.marca .logo { width: 28px; height: 28px; border-radius: 8px; background: var(--texto); display: grid; place-items: center; }
+.topo nav { display: flex; gap: 4px; }
+.nav { padding: 7px 12px; border-radius: 8px; font-size: 14px; font-weight: 500; color: var(--texto-2); background: none; border: 0; font-family: inherit; cursor: pointer; transition: background .15s, color .15s; }
+.nav:hover { background: #ECECE9; color: var(--texto); }
+.nav.ativa { background: #E9E9E6; color: var(--texto); }
+.status { display: inline-flex; align-items: center; gap: 8px; height: 32px; padding: 0 12px 0 10px; border-radius: 99px; background: var(--superficie); border: 1px solid var(--borda); font-size: 13px; white-space: nowrap; }
+.status .ponto { width: 8px; height: 8px; border-radius: 99px; background: var(--texto-3); }
+.status.ok .ponto { background: var(--sucesso-ponto); box-shadow: 0 0 0 3px rgba(31, 157, 87, .15); }
+.status.aviso .ponto { background: var(--atencao-ponto); box-shadow: 0 0 0 3px rgba(227, 161, 59, .18); }
+.status.ocupado { background: var(--acao-suave); border-color: var(--acao-borda); color: var(--acao-texto); }
+
+/* ── Botões ────────────────────────────────────────────── */
+.btn {
+  height: 40px; padding: 0 16px; border-radius: 10px; border: 1px solid var(--borda-forte); background: var(--superficie);
+  color: var(--texto); font-size: 14px; font-weight: 500; line-height: 1; font-family: inherit; cursor: pointer; display: inline-flex; align-items: center; gap: 8px;
+  transition: background .15s, border-color .15s, transform .1s, box-shadow .15s; white-space: nowrap;
+}
+.btn:hover { background: #F0F0EE; }
+.btn:active { transform: scale(.98); }
+.btn:focus-visible, .chip:focus-visible, .nav:focus-visible, .aba:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible, summary:focus-visible { outline: none; box-shadow: var(--foco); }
+.btn.primario { background: var(--acao); border-color: var(--acao); color: #FFFFFF; font-weight: 600; }
+.btn.primario:hover { background: var(--acao-escura); }
+.btn.fantasma { background: transparent; border-color: transparent; color: var(--texto-2); }
+.btn.fantasma:hover { background: var(--realce); }
+.btn.perigo { background: #FDECEA; border-color: #F3C7C2; color: var(--erro); font-weight: 600; }
+.btn.perigo:hover { background: #FBDDD9; }
+.btn.grande { height: 48px; padding: 0 20px; border-radius: 12px; font-size: 15px; }
+.btn.pequeno { height: 32px; padding: 0 12px; border-radius: 8px; font-size: 13px; }
+.btn.icone { width: 36px; height: 36px; padding: 0; justify-content: center; }
+.btn:disabled { background: #E9E9E6; border-color: #E9E9E6; color: #8A8A92; cursor: default; transform: none; }
+.chip { height: 36px; padding: 0 14px; border-radius: 99px; border: 1px solid var(--borda-forte); background: var(--superficie-2); font-size: 14px; font-weight: 500; line-height: 1; font-family: inherit; color: #2B2B30; cursor: pointer; transition: background .15s, border-color .15s; }
+.chip:hover { background: var(--superficie); border-color: #C9C9C4; }
+.chip:disabled { opacity: .5; cursor: default; }
+
+/* ── Campos ────────────────────────────────────────────── */
+.campo { display: flex; flex-direction: column; gap: 6px; }
+.campo > span:first-child, .rotulo { font-size: 13px; font-weight: 500; color: var(--texto); }
+.ajuda { font-size: 12px; color: var(--texto-3); }
+input[type="text"], input[type="password"], input[type="number"], input[type="date"], input[type="time"], select {
+  height: 40px; padding: 0 12px; border-radius: 10px; border: 1px solid var(--borda-forte); background: var(--superficie);
+  font-size: 14px; font-weight: 400; font-family: inherit; color: var(--texto); width: 100%; transition: border-color .15s, box-shadow .2s;
+}
+input:focus, select:focus { outline: none; border-color: var(--acao); box-shadow: 0 0 0 4px rgba(36, 81, 214, .12); }
+input::placeholder { color: #8A8A92; }
+input:invalid { border-color: #D0453A; }
+input[type="checkbox"], input[type="radio"] { accent-color: var(--acao); width: 16px; height: 16px; margin: 0; }
+.caixa { display: inline-flex; align-items: center; gap: 8px; font-size: 13px; color: var(--texto-2); cursor: pointer; user-select: none; }
+
+/* ── Cartões e seções ──────────────────────────────────── */
+.cartao { background: var(--superficie); border: 1px solid var(--borda); border-radius: 20px; box-shadow: var(--sombra-1); padding: 22px 24px; }
+.cartao > h2, .titulo-secao { font-size: 16px; font-weight: 600; letter-spacing: -.01em; }
+.cartao .sub { font-size: 13px; color: var(--texto-3); margin-top: 3px; }
+.cabeca { display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; margin-bottom: 16px; }
+
+/* ── Badges ────────────────────────────────────────────── */
+.badge { display: inline-flex; align-items: center; gap: 5px; height: 24px; padding: 0 10px; border-radius: 99px; font-size: 12px; font-weight: 600; white-space: nowrap; background: var(--realce); color: #3D3D44; }
+.badge .cod { font-family: var(--mono); }
+.badge.acao { background: var(--acao-suave); color: var(--acao-texto); }
+.badge.ok { background: var(--sucesso-suave); color: #146038; }
+.badge.aviso { background: #FDF3E2; color: var(--atencao); }
+.badge.erro { background: #FDECEA; color: var(--erro); }
+
+/* ── Alertas / mensagens ───────────────────────────────── */
+.alerta { display: flex; gap: 12px; padding: 12px 14px; border-radius: 12px; border: 1px solid var(--borda); background: var(--superficie-2); font-size: 13px; line-height: 1.5; white-space: pre-wrap; }
+.alerta .ponto { margin-top: 6px; width: 8px; height: 8px; flex-shrink: 0; border-radius: 99px; background: var(--texto-3); }
+.alerta b { display: block; font-size: 14px; font-weight: 600; margin-bottom: 2px; white-space: normal; }
+.alerta.ok { background: var(--sucesso-suave); border-color: var(--sucesso-borda); } .alerta.ok .ponto { background: var(--sucesso-ponto); } .alerta.ok b { color: #146038; }
+.alerta.info { background: #F5F8FF; border-color: var(--acao-borda); } .alerta.info .ponto { background: var(--acao); } .alerta.info b { color: var(--acao-texto); }
+.alerta.aviso { background: var(--atencao-suave); border-color: var(--atencao-borda); } .alerta.aviso .ponto { background: var(--atencao-ponto); } .alerta.aviso b { color: var(--atencao); }
+.alerta.erro { background: var(--erro-suave); border-color: var(--erro-borda); } .alerta.erro .ponto { background: var(--erro-ponto); } .alerta.erro b { color: var(--erro); }
+.alerta .acoes { display: flex; gap: 8px; margin-top: 8px; white-space: normal; }
+
+/* ── Tabelas ───────────────────────────────────────────── */
+table { width: 100%; border-collapse: collapse; font-size: 14px; }
+th { text-align: left; font-size: 12px; font-weight: 500; color: var(--texto-3); text-transform: uppercase; letter-spacing: .05em; padding: 0 12px 10px 0; }
+td { padding: 12px 12px 12px 0; border-top: 1px solid #EEEEEB; vertical-align: top; }
+tbody tr { transition: background .15s; }
+tbody tr:hover { background: #F9F9F7; }
+td.mono, td .mono { font-size: 13px; }
+
+/* ── Abas segmentadas ──────────────────────────────────── */
+.segmentos { display: inline-flex; gap: 4px; padding: 3px; background: var(--realce); border-radius: 10px; flex-wrap: wrap; }
+.aba { height: 30px; padding: 0 12px; border-radius: 8px; border: 0; background: transparent; font-size: 13px; font-weight: 500; font-family: inherit; color: var(--texto-2); cursor: pointer; transition: background .15s, color .15s; }
+.aba:hover { color: var(--texto); }
+.aba[aria-selected="true"] { background: var(--superficie); color: var(--texto); box-shadow: 0 1px 2px rgba(20, 20, 22, .08); }
+
+/* ── Progresso, skeleton, spinner ──────────────────────── */
+.barra { height: 8px; border-radius: 99px; background: #EEEEEB; overflow: hidden; }
+.barra > div { height: 100%; width: 0; border-radius: 99px; background: var(--acao); transition: width .3s ease; }
+.barra.ok > div { background: var(--sucesso-ponto); }
+.barra.falha > div { background: var(--atencao-ponto); }
+@keyframes girar { to { transform: rotate(360deg); } }
+@keyframes brilho { 0% { background-position: -300px 0; } 100% { background-position: 300px 0; } }
+@keyframes entrar { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: none; } }
+.spin { animation: girar .9s linear infinite; }
+.sk { background: linear-gradient(90deg, #EEEEEB 0, #F7F7F5 50%, #EEEEEB 100%); background-size: 600px 100%; animation: brilho 1.4s ease-in-out infinite; border-radius: 6px; }
+.entrar { animation: entrar .2s ease-out both; }
+
+/* ── Toast ─────────────────────────────────────────────── */
+.toast { position: fixed; right: 24px; bottom: 24px; z-index: 20; display: flex; align-items: center; gap: 14px; padding: 12px 12px 12px 16px; border-radius: 14px; background: var(--texto); color: #FFFFFF; box-shadow: var(--sombra-3); font-size: 14px; animation: entrar .2s ease-out both; max-width: 520px; }
+.toast .btn { height: 32px; border-color: rgba(255, 255, 255, .22); background: transparent; color: #FFFFFF; }
+.toast .btn:hover { background: rgba(255, 255, 255, .08); }
+
+/* ── Estados vazios ────────────────────────────────────── */
+.vazio { display: flex; flex-direction: column; align-items: center; text-align: center; gap: 8px; padding: 28px 16px; color: var(--texto-2); font-size: 13px; }
+.vazio .icone { width: 44px; height: 44px; border-radius: 14px; background: var(--realce); display: grid; place-items: center; margin-bottom: 4px; }
+.vazio b { font-size: 15px; color: var(--texto); }
+
+/* ── Rodapé de ações fixo (janelas de edição) ──────────── */
+.rodape { position: fixed; left: 0; right: 0; bottom: 0; display: flex; align-items: center; gap: 10px; padding: 12px 28px; background: rgba(255, 255, 255, .96); border-top: 1px solid var(--borda); backdrop-filter: blur(8px); z-index: 5; }
+.rodape .estado { flex-grow: 1; font-size: 13px; color: var(--atencao); }
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation-duration: .01ms !important; animation-iteration-count: 1 !important; transition-duration: .01ms !important; }
+}

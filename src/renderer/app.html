@@ -3,375 +3,748 @@
 <head>
   <meta charset="UTF-8" />
   <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'" />
-  <title>Frequência Agent — Preencher frequência</title>
+  <title>SR_dados</title>
+  <link rel="stylesheet" href="sr.css" />
   <style>
-    * { box-sizing: border-box; margin: 0; padding: 0; }
-    body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: #f8fafc; color: #1e293b; font-size: 13px; }
-    .header { background: #1e293b; color: white; padding: 14px 24px; }
-    .header h1 { font-size: 15px; font-weight: 600; }
-    .header p { font-size: 11px; color: #94a3b8; margin-top: 2px; }
-    .hero { background: white; border-bottom: 1px solid #e2e8f0; padding: 22px 24px 16px; display: flex; flex-direction: column; align-items: center; gap: 10px; }
-    .hero .sub { font-size: 12px; color: #64748b; }
-    button { padding: 7px 14px; border-radius: 6px; font-size: 12px; font-weight: 500; cursor: pointer; border: 1px solid #d1d5db; background: white; color: #1e293b; }
-    button.primary { background: #1e293b; color: white; border-color: #1e293b; }
-    button.grande { font-size: 15px; font-weight: 600; padding: 12px 34px; border-radius: 8px; }
-    button.danger { background: #b45309; color: white; border-color: #b45309; }
-    button.link { border: none; background: none; color: #475569; text-decoration: underline; padding: 4px 6px; }
-    button:disabled { opacity: .45; cursor: default; }
-    .atalhos { display: flex; gap: 6px; flex-wrap: wrap; justify-content: center; align-items: center; }
-    .acoes { display: flex; gap: 10px; align-items: flex-end; flex-wrap: wrap; justify-content: center; }
-    .data { display: flex; flex-direction: column; gap: 3px; font-size: 11px; font-weight: 600; color: #64748b; text-transform: uppercase; letter-spacing: .04em; }
-    .data input { font-size: 15px; padding: 9px 10px; border: 1px solid #cbd5e1; border-radius: 8px; color: #1e293b; font-family: inherit; }
-    button.secundario { background: white; color: #1e293b; border: 2px solid #1e293b; }
-    .progresso { background: white; border-bottom: 1px solid #e2e8f0; padding: 14px 24px; }
-    .progresso .topo { display: flex; gap: 10px; align-items: baseline; font-size: 13px; }
-    .progresso .topo span { color: #64748b; font-size: 12px; }
-    .barra { height: 8px; background: #e2e8f0; border-radius: 99px; overflow: hidden; margin: 8px 0 10px; }
-    .barra > div { height: 100%; width: 0; background: #1e293b; transition: width .25s; }
-    .barra.ok > div { background: #16a34a; }
-    .barra.falha > div { background: #b45309; }
-    #progDias { list-style: none; display: grid; gap: 4px; }
-    #progDias li { display: grid; grid-template-columns: 22px 150px 1fr; gap: 6px; font-size: 12px; align-items: baseline; }
-    #progDias li .ic { text-align: center; }
-    #progDias li .nome { font-weight: 600; }
-    #progDias li .det { color: #475569; }
-    #progDias li.erro .det { color: #b91c1c; }
-    #progDias li.pulado .det { color: #92400e; }
-    #progDias li.pronto .det { color: #166534; }
-    .chk { font-size: 12px; color: #475569; display: flex; gap: 4px; align-items: center; }
-    details.avancado { width: 100%; max-width: 760px; font-size: 12px; color: #475569; margin-top: 4px; }
-    details.avancado > summary { cursor: pointer; text-align: center; }
-    .linha-arq { display: flex; gap: 6px; align-items: center; justify-content: center; margin-top: 8px; flex-wrap: wrap; }
-    .file { padding: 7px 10px; border: 1px dashed #cbd5e1; border-radius: 6px; font-size: 12px; color: #64748b; min-width: 220px; max-width: 420px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-    main { padding: 16px 24px 40px; }
-    .msg { padding: 10px 12px; border-radius: 6px; font-size: 12px; margin-bottom: 12px; white-space: pre-wrap; }
-    .msg.ok { background: #dcfce7; color: #166534; }
-    .msg.err { background: #fee2e2; color: #991b1b; }
-    .msg.warn { background: #fffbeb; color: #92400e; border: 1px solid #fde68a; }
-    .msg.info { background: #e0f2fe; color: #075985; }
-    .msg button { display: block; margin-top: 8px; }
-    .cards { display: flex; gap: 10px; flex-wrap: wrap; margin-bottom: 14px; }
-    .card { background: white; border: 1px solid #e2e8f0; border-radius: 8px; padding: 10px 14px; min-width: 130px; }
-    .card .n { font-size: 20px; font-weight: 600; font-variant-numeric: tabular-nums; }
-    .card .l { font-size: 11px; color: #64748b; }
-    .avisos { background: #fffbeb; border: 1px solid #fde68a; border-radius: 8px; padding: 10px 14px; margin-bottom: 14px; font-size: 12px; color: #92400e; }
-    .avisos li { margin-left: 16px; margin-top: 3px; }
-    .dia { background: white; border: 1px solid #e2e8f0; border-radius: 8px; margin-bottom: 12px; }
-    .dia > summary { padding: 10px 14px; cursor: pointer; font-size: 13px; font-weight: 600; list-style-position: inside; }
-    .dia > summary .res { font-weight: 400; color: #64748b; font-size: 12px; margin-left: 8px; }
-    .dia .corpo { padding: 0 14px 14px; }
-    details.outros { margin-top: 14px; font-size: 12px; color: #475569; } details.outros summary { cursor: pointer; }
-    h3 { font-size: 11px; text-transform: uppercase; letter-spacing: .05em; color: #475569; margin: 14px 0 6px; }
-    table { width: 100%; border-collapse: collapse; background: white; border: 1px solid #e2e8f0; border-radius: 8px; overflow: hidden; }
-    th, td { text-align: left; padding: 6px 10px; border-bottom: 1px solid #f1f5f9; font-size: 12px; vertical-align: top; }
-    th { background: #f1f5f9; font-size: 11px; color: #475569; font-weight: 600; }
-    td.cod { font-weight: 700; font-family: Consolas, monospace; }
-    td.mot { color: #475569; }
+    main { max-width: 1200px; margin: 0 auto; padding: 36px 32px 72px; display: flex; flex-direction: column; gap: 24px; }
+    .hero { display: flex; flex-direction: column; align-items: center; gap: 14px; }
+    .hero .quando { font-size: 13px; font-weight: 500; color: var(--texto-3); }
+    .hero h1 { font-size: 36px; line-height: 1.1; font-weight: 600; letter-spacing: -.025em; text-align: center; }
+    .cmd { margin-top: 6px; width: min(760px, 100%); height: 60px; display: flex; align-items: center; gap: 12px; padding: 0 8px 0 20px; background: var(--superficie); border: 1px solid var(--borda-forte); border-radius: 18px; box-shadow: var(--sombra-2); transition: border-color .2s, box-shadow .2s; }
+    .cmd:focus-within { border-color: var(--acao); box-shadow: 0 0 0 4px rgba(36, 81, 214, .12), 0 8px 28px rgba(20, 20, 22, .06); }
+    .cmd input { flex-grow: 1; min-width: 0; border: 0; height: 100%; font-size: 16px; padding: 0; background: transparent; box-shadow: none !important; }
+    .cmd kbd { font-family: var(--mono); font-size: 12px; color: var(--texto-3); padding: 3px 8px; border: 1px solid var(--borda); border-radius: 6px; }
+    .chips { display: flex; gap: 8px; flex-wrap: wrap; justify-content: center; width: min(760px, 100%); }
+    .opcoes { display: flex; gap: 18px; align-items: center; flex-wrap: wrap; justify-content: center; font-size: 13px; color: var(--texto-2); }
+    .opcoes .dia { display: inline-flex; align-items: center; gap: 8px; font-weight: 500; color: var(--texto); }
+    .opcoes .dia input { width: 160px; height: 34px; }
+    .opcoes .sep { width: 1px; height: 18px; background: var(--borda); }
+    .conversa { display: flex; flex-direction: column; gap: 16px; }
+    .bolha-eu { align-self: flex-end; max-width: 70%; padding: 10px 16px; border-radius: 16px 16px 4px 16px; background: var(--realce); font-size: 15px; }
+    .bot { display: flex; gap: 14px; align-items: flex-start; }
+    .bot .avatar { width: 32px; height: 32px; flex-shrink: 0; border-radius: 10px; background: var(--texto); display: grid; place-items: center; }
+    .bot .corpo { flex-grow: 1; min-width: 0; display: flex; flex-direction: column; gap: 14px; }
+    .bot .fala { font-size: 16px; line-height: 1.5; }
+    .bot .fala .hora { font-size: 12px; color: var(--texto-3); margin-left: 8px; }
+    .dias-mini { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 8px; }
+    .dia-mini { padding: 10px 12px; border-radius: 12px; background: var(--superficie-2); border: 1px solid #EEEEEB; display: flex; flex-direction: column; gap: 3px; }
+    .dia-mini .t { display: flex; justify-content: space-between; align-items: center; font-size: 13px; font-weight: 600; }
+    .dia-mini .n { font-family: var(--mono); font-size: 13px; color: #2B2B30; }
+    .dia-mini .nota { font-size: 12px; }
+    .acoes-linha { display: flex; gap: 8px; flex-wrap: wrap; }
+    .grade { display: grid; grid-template-columns: minmax(0, 2fr) minmax(0, 1fr); gap: 24px; align-items: start; }
+    .lateral { display: flex; flex-direction: column; gap: 24px; }
+    .kpis { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); border-top: 1px solid #EEEEEB; border-bottom: 1px solid #EEEEEB; margin-bottom: 20px; }
+    .kpi { padding: 14px 0; display: flex; flex-direction: column; gap: 4px; }
+    .kpi .r { font-size: 13px; color: var(--texto-3); }
+    .kpi .v { font-size: 28px; font-weight: 600; letter-spacing: -.02em; font-variant-numeric: tabular-nums; }
+    .kpi .d { font-size: 12px; color: var(--texto-3); }
+    .grafico { display: flex; gap: 24px; align-items: flex-end; }
+    .barras { flex-grow: 1; height: 160px; display: grid; grid-auto-columns: minmax(0, 1fr); grid-auto-flow: column; gap: 14px; align-items: end; }
+    .col { display: flex; flex-direction: column; align-items: center; gap: 8px; }
+    .pilha { width: 40px; height: 128px; display: flex; flex-direction: column; justify-content: flex-end; gap: 2px; }
+    .pilha > div { width: 40px; border-radius: 3px; transition: height .4s ease; }
+    .pilha .p { background: var(--acao); border-radius: 3px 3px 8px 8px; }
+    .pilha .a { background: var(--atencao-ponto); }
+    .pilha .r { background: #C4C4BE; border-radius: 8px 8px 3px 3px; }
+    .pilha.vazia { box-sizing: border-box; border: 1.5px dashed #D6D6D1; border-radius: 8px; }
+    .col .dia { font-size: 12px; font-weight: 500; color: var(--texto-2); }
+    .legenda { width: 140px; display: flex; flex-direction: column; gap: 10px; font-size: 13px; color: var(--texto-2); padding-bottom: 26px; }
+    .legenda span { display: flex; align-items: center; gap: 8px; }
+    .legenda i { width: 10px; height: 10px; border-radius: 3px; display: inline-block; }
+    .item-atencao { display: flex; gap: 12px; padding: 12px 8px; border-radius: 12px; transition: background .15s; }
+    .item-atencao:hover { background: #F7F7F5; }
+    .item-atencao .ponto { margin-top: 6px; width: 8px; height: 8px; flex-shrink: 0; border-radius: 99px; }
+    .item-atencao b { display: block; font-size: 14px; font-weight: 600; }
+    .item-atencao p { font-size: 13px; color: var(--texto-2); margin-top: 2px; }
+    .item-atencao a { display: inline-block; font-size: 13px; font-weight: 500; margin-top: 4px; }
+    .linha-tempo { display: flex; flex-direction: column; }
+    .evento { display: flex; gap: 14px; }
+    .evento .trilho { display: flex; flex-direction: column; align-items: center; width: 10px; }
+    .evento .trilho i { margin-top: 6px; width: 8px; height: 8px; border-radius: 99px; }
+    .evento .trilho u { flex-grow: 1; width: 1px; background: var(--borda); margin-top: 4px; text-decoration: none; }
+    .evento:last-child .trilho u { display: none; }
+    .evento .txt { padding-bottom: 14px; display: flex; flex-direction: column; gap: 2px; }
+    .evento .txt b { font-size: 14px; font-weight: 500; }
+    .evento .txt span { font-size: 12px; color: var(--texto-3); }
+    /* progresso */
+    .prog-topo { display: flex; justify-content: space-between; align-items: baseline; gap: 16px; margin-bottom: 14px; }
+    .prog-topo b { font-size: 17px; font-weight: 600; }
+    .prog-topo .pct { font-family: var(--mono); font-size: 26px; font-weight: 500; letter-spacing: -.02em; }
+    .prog-dias { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 10px; margin-top: 16px; }
+    .prog-dia { padding: 12px 14px; border-radius: 14px; border: 1px solid var(--borda); background: var(--superficie); display: flex; flex-direction: column; gap: 8px; min-height: 96px; transition: background .2s, border-color .2s; }
+    .prog-dia .t { display: flex; justify-content: space-between; align-items: center; font-size: 14px; font-weight: 600; }
+    .prog-dia .fase { font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: .05em; color: var(--texto-3); }
+    .prog-dia .det { font-size: 13px; line-height: 1.4; color: var(--texto-2); }
+    .prog-dia.ativo { border-color: #C9D5F7; background: #F5F8FF; } .prog-dia.ativo .fase { color: var(--acao); }
+    .prog-dia.pronto .fase { color: var(--sucesso); }
+    .prog-dia.pulado { background: var(--superficie-2); } .prog-dia.pulado .fase { color: var(--atencao); }
+    .prog-dia.erro { border-color: var(--erro-borda); background: var(--erro-suave); } .prog-dia.erro .fase { color: var(--erro); }
+    .prog-dia.espera { background: var(--superficie-2); } .prog-dia.espera .t { color: #8A8A92; }
+    /* detalhes por dia */
+    details.dia { border-top: 1px solid #EEEEEB; }
+    details.dia:first-of-type { border-top: 0; }
+    details.dia > summary { list-style: none; cursor: pointer; display: flex; align-items: center; gap: 12px; padding: 14px 4px; border-radius: 10px; }
+    details.dia > summary::-webkit-details-marker { display: none; }
+    details.dia > summary:hover { background: #F9F9F7; }
+    details.dia > summary .seta { transition: transform .2s; }
+    details.dia[open] > summary .seta { transform: rotate(90deg); }
+    details.dia > summary .nome { font-weight: 600; font-size: 15px; }
+    details.dia > summary .resumo { font-size: 13px; color: var(--texto-3); flex-grow: 1; }
+    .dia-corpo { padding: 4px 4px 18px; display: flex; flex-direction: column; gap: 14px; }
+    .motivo { font-size: 13px; color: var(--texto-2); line-height: 1.45; }
+    select.just { height: 32px; min-width: 150px; font-size: 13px; }
+    .just-rodape { display: flex; justify-content: space-between; align-items: center; gap: 16px; flex-wrap: wrap; padding: 12px 4px 0; font-size: 13px; }
+    .avancado { width: min(760px, 100%); font-size: 13px; color: var(--texto-2); }
+    .avancado summary { cursor: pointer; text-align: center; list-style: none; }
+    .avancado summary::-webkit-details-marker { display: none; }
+    .avancado .linha { display: flex; gap: 8px; align-items: center; justify-content: center; flex-wrap: wrap; margin-top: 10px; }
+    .arquivo { padding: 8px 12px; border: 1px dashed #CBD5E1; border-radius: 10px; color: var(--texto-3); max-width: 360px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    @media (max-width: 900px) {
+      main { padding: 24px 18px 72px; }
+      .hero h1 { font-size: 28px; }
+      .grade { grid-template-columns: minmax(0, 1fr); }
+      .kpis { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+      .topo nav { display: none; }
+    }
   </style>
 </head>
 <body>
-  <div class="header">
-    <h1>Preencher frequência</h1>
-    <p>Busca o ponto do dia (ou da semana) escolhido e preenche a planilha, dia por dia. Nunca altera o que já está lançado, nunca marca falta sozinho; domingos e feriados (colunas ocultas) ficam em branco. Tudo pode ser desfeito.</p>
-  </div>
+  <header class="topo">
+    <div class="marca">
+      <span class="logo"><svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="#fff" stroke-width="1.6" stroke-linecap="round"><path d="M3 5h10M3 8h6M3 11h8"/></svg></span>
+      SR_dados
+    </div>
+    <nav aria-label="Principal">
+      <button class="nav ativa" aria-current="page">Início</button>
+      <button class="nav" id="navRegras">Horários e regras</button>
+      <button class="nav" id="navRelatorios">Relatórios</button>
+    </nav>
+    <div style="display:flex;align-items:center;gap:10px">
+      <span class="status" id="status"><span class="ponto"></span><span id="statusTexto">Verificando…</span></span>
+      <button class="btn icone" id="btnConfig" aria-label="Configurações" title="Configurações">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#55555D" stroke-width="1.8" stroke-linecap="round"><path d="M4 7h10M18 7h2M4 17h4M12 17h8"/><circle cx="16" cy="7" r="2"/><circle cx="10" cy="17" r="2"/></svg>
+      </button>
+    </div>
+  </header>
 
-  <div class="hero">
-    <div class="acoes">
-      <label class="data">
-        <span>Dia</span>
-        <input type="date" id="data" />
-      </label>
-      <button class="primary grande" id="btnDia">Preencher dia</button>
-      <button class="grande secundario" id="btnSemana">Conferir semana</button>
-    </div>
-    <div class="sub" id="subtitulo">segunda a sábado da semana do dia escolhido · o dia de hoje só entra depois do horário de corte</div>
-    <div class="atalhos">
-      <label class="chk" title="Mostra o que seria preenchido, sem gravar nada"><input type="checkbox" id="simular" /> simular (não grava)</label>
-      <label class="chk" title="Inclui o dia de hoje mesmo antes do horário de corte"><input type="checkbox" id="forcar" /> incluir hoje antes do corte</label>
-      <button class="link" id="btnRegras">Horários e regras</button>
-      <button class="link" id="btnConfig">Configurações</button>
-      <button class="link" id="btnRel">Relatórios</button>
-      <button class="link" id="btnDesfazerAnt" title="Escolhe o(s) relatório(s) de escrita já feita(s) e apaga as células que o bot gravou">Desfazer escrita anterior...</button>
-    </div>
-    <details class="avancado">
-      <summary>Avançado: conferir a partir de arquivos HTML do ponto</summary>
-      <div class="linha-arq">
-        <div class="file" id="htmlName">Nenhum arquivo</div>
-        <button id="btnHtml">Selecionar...</button>
-        <button id="btnSim">Conferir arquivos</button>
+  <main>
+    <section class="hero">
+      <div class="quando" id="hoje"></div>
+      <h1>O que você deseja consultar?</h1>
+      <form class="cmd" id="formCmd" autocomplete="off">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#6B6B73" stroke-width="1.8" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>
+        <input type="text" id="cmd" aria-label="Comando para o SR_dados" placeholder="Preencher hoje, conferir semana de 21/09, simular ontem…" />
+        <kbd>Enter</kbd>
+        <button class="btn primario" type="submit" id="btnCmd">Consultar</button>
+      </form>
+      <div class="chips" id="chips">
+        <button class="chip" data-cmd="dia">Preencher dia</button>
+        <button class="chip" data-cmd="semana">Conferir semana</button>
+        <button class="chip" data-cmd="pendencias">Pendências de revisão</button>
+        <button class="chip" data-cmd="historico">Ver histórico</button>
+        <button class="chip" data-cmd="relatorios">Gerar relatório</button>
       </div>
-    </details>
-  </div>
+      <div class="opcoes">
+        <label class="dia">Dia <input type="date" id="data" aria-label="Dia" /></label>
+        <span class="sep"></span>
+        <label class="caixa" title="Mostra o que seria preenchido, sem gravar nada"><input type="checkbox" id="simular" /> simular (não grava)</label>
+        <label class="caixa" title="Inclui o dia de hoje mesmo antes do horário de corte"><input type="checkbox" id="forcar" /> incluir hoje antes do corte</label>
+      </div>
+      <details class="avancado">
+        <summary>Avançado</summary>
+        <div class="linha">
+          <span class="arquivo" id="htmlName">Nenhum arquivo HTML do ponto</span>
+          <button class="btn pequeno" id="btnHtml">Selecionar HTML…</button>
+          <button class="btn pequeno" id="btnSim">Conferir arquivos</button>
+          <button class="btn pequeno fantasma" id="btnDesfazerAnt">Desfazer escrita anterior…</button>
+        </div>
+      </details>
+    </section>
 
-  <section id="progresso" class="progresso" hidden>
-    <div class="topo">
-      <b id="progTitulo">Preenchendo...</b>
-      <span id="progEtapa"></span>
+    <section class="cartao entrar" id="progresso" hidden aria-live="polite">
+      <div class="prog-topo">
+        <div style="display:flex;flex-direction:column;gap:4px">
+          <b id="progTitulo">Preenchendo…</b>
+          <span class="ter" id="progEtapa"></span>
+        </div>
+        <span class="pct" id="progPct">0%</span>
+      </div>
+      <div class="barra" id="progBarraFundo"><div id="progBarra"></div></div>
+      <div class="prog-dias" id="progDias"></div>
+    </section>
+
+    <section class="cartao conversa entrar" id="resposta" hidden aria-live="polite"></section>
+
+    <div class="grade">
+      <section class="cartao" aria-label="Frequência" id="freq"></section>
+      <div class="lateral">
+        <section class="cartao" aria-label="Precisa da sua atenção" style="padding-bottom:12px">
+          <h2 style="margin:0 8px 8px">Precisa da sua atenção</h2>
+          <div id="atencao"></div>
+        </section>
+        <section class="cartao" aria-label="Atividade recente">
+          <div class="cabeca" style="margin-bottom:12px"><h2 class="titulo-secao">Atividade recente</h2><a id="lnkRelatorios">Relatórios</a></div>
+          <div class="linha-tempo" id="atividade"></div>
+        </section>
+      </div>
     </div>
-    <div class="barra"><div id="progBarra"></div></div>
-    <ul id="progDias"></ul>
-  </section>
 
-  <main id="out"></main>
+    <section class="cartao" id="detalhes" hidden aria-label="Detalhes por dia">
+      <div class="cabeca"><div><h2 class="titulo-secao">Detalhes por dia</h2><div class="sub">Clique num dia para ver cada colaborador e o motivo.</div></div></div>
+      <div id="detalhesDias"></div>
+    </section>
+  </main>
 
+  <div class="toast" id="toast" hidden role="status"></div>
+
+  <script src="comando.js"></script>
   <script>
     const $ = id => document.getElementById(id)
-    const ROT = {
-      escrever: 'Será escrito', revisar: 'Precisa de revisão', divergente: 'Já lançado — diverge do bot',
-      nao_encontrado: 'Não encontrado na planilha', sem_linha_no_mes: 'Sem linha na aba do mês', ambiguo: 'Match ambíguo',
-      confere: 'Já lançado — confere', ja_lancado: 'Já lançado à mão', ausente_no_ponto: 'Fora do seu ponto (outros setores)',
-    }
-    const ORDEM = ['escrever', 'revisar', 'divergente', 'nao_encontrado', 'sem_linha_no_mes', 'ambiguo', 'confere', 'ja_lancado', 'ausente_no_ponto']
-    const COR = { escrever: '#166534', revisar: '#b45309', divergente: '#b91c1c', nao_encontrado: '#b91c1c', sem_linha_no_mes: '#b45309', ambiguo: '#b91c1c', confere: '#475569', ja_lancado: '#475569', ausente_no_ponto: '#475569' }
     const SEMANA = ['domingo', 'segunda', 'terça', 'quarta', 'quinta', 'sexta', 'sábado']
+    const SEM = ['Dom', 'Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sáb']
+    const MESES = ['janeiro', 'fevereiro', 'março', 'abril', 'maio', 'junho', 'julho', 'agosto', 'setembro', 'outubro', 'novembro', 'dezembro']
+    const LOGO = '<svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="#fff" stroke-width="1.6" stroke-linecap="round"><path d="M3 5h10M3 8h6M3 11h8"/></svg>'
+    const OK = '<svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="#177245" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m3.5 8.5 3 3 6-7"/></svg>'
+    const GIRA = '<svg class="spin" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#2451D6" stroke-width="2.4" stroke-linecap="round"><path d="M21 12a9 9 0 1 1-6.2-8.6"/></svg>'
+    const X = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#B42318" stroke-width="2.2" stroke-linecap="round"><path d="M6 6l12 12M18 6 6 18"/></svg>'
+    const SETA = '<svg class="seta" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#6B6B73" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m9 6 6 6-6 6"/></svg>'
+    const ROT = {
+      escrever: 'Preenchido', revisar: 'Sem ponto', divergente: 'Diverge', nao_encontrado: 'Não encontrado',
+      sem_linha_no_mes: 'Sem linha no mês', ambiguo: 'Ambíguo', confere: 'Já conferia', ja_lancado: 'Já lançado', ausente_no_ponto: 'Outro setor', justificado: 'Justificado',
+    }
+    // Legenda da planilha (src/core/codigos.ts), na ordem em que costuma ser usada ao justificar.
+    const JUSTIFICATIVAS = [['AT', 'Atestado médico'], ['AC', 'Atestado de comparecimento'], ['FO', 'Folga'], ['F', 'Falta'], ['FE', 'Férias'], ['S', 'Suspensão'], ['V', 'Viagem'], ['GL', 'Ginástica laboral'], ['.', 'Presença pontual'], ['P', 'Presença com atraso']]
+    const NOME_CODIGO = Object.fromEntries(JUSTIFICATIVAS)
+
+    let ultimoLote = null        // último resultado (alimenta frequência, atenção e detalhes)
+    let ocupadoAgora = false
     let htmlPaths = []
 
-    function el(tag, props = {}, ...kids) { const e = document.createElement(tag); Object.assign(e, props); e.append(...kids); return e }
-    function msg(kind, text) { $('out').replaceChildren(el('div', { className: 'msg ' + kind, textContent: text })) }
-    function nomeDia(iso) {
-      const [a, m, d] = iso.split('-').map(Number)
-      return `${SEMANA[new Date(a, m - 1, d).getDay()]}, ${String(d).padStart(2, '0')}/${String(m).padStart(2, '0')}`
+    // ── utilidades ──
+    function el(tag, props = {}, ...kids) {
+      const e = document.createElement(tag)
+      for (const [k, v] of Object.entries(props)) {
+        if (k === 'html') e.innerHTML = v
+        else if (k === 'style' && typeof v === 'string') e.style.cssText = v
+        else if (k.startsWith('on')) e.addEventListener(k.slice(2).toLowerCase(), v)
+        else if (k in e) e[k] = v
+        else e.setAttribute(k, v)
+      }
+      e.append(...kids.filter(k => k !== null && k !== undefined && k !== false))
+      return e
     }
-    function ocupado(sim) {
-      for (const id of ['btnDia', 'btnSemana', 'btnSim', 'data']) $(id).disabled = sim
+    function hojeISO() { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}` }
+    function deISO(s) { const [a, m, d] = s.split('-').map(Number); return new Date(a, m - 1, d) }
+    function nomeDia(iso) { const d = deISO(iso); return `${SEM[d.getDay()]} ${String(d.getDate()).padStart(2, '0')}/${String(d.getMonth() + 1).padStart(2, '0')}` }
+    function diaLongo(iso) { const d = deISO(iso); return `${SEMANA[d.getDay()]}, ${String(d.getDate()).padStart(2, '0')}/${String(d.getMonth() + 1).padStart(2, '0')}` }
+    function horaAgora() { const d = new Date(); return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}` }
+    function quando(isoData) {
+      const d = new Date(isoData), h = `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`
+      const dia = hojeISO(), ontem = (() => { const x = new Date(); x.setDate(x.getDate() - 1); return `${x.getFullYear()}-${String(x.getMonth() + 1).padStart(2, '0')}-${String(x.getDate()).padStart(2, '0')}` })()
+      const iso = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+      return iso === dia ? `Hoje, ${h}` : iso === ontem ? `Ontem, ${h}` : `${String(d.getDate()).padStart(2, '0')}/${String(d.getMonth() + 1).padStart(2, '0')}, ${h}`
+    }
+    function plural(n, um, varios) { return `${n} ${n === 1 ? um : varios}` }
+
+    let toastTimer = null
+    function toast(texto, acao) {
+      const t = $('toast')
+      t.replaceChildren(el('span', { html: OK.replace('#177245', '#6EE7A8') }), el('span', { textContent: texto }), acao ? el('button', { className: 'btn pequeno', textContent: acao.rotulo, onClick: () => { t.hidden = true; acao.fn() } }) : null)
+      t.hidden = false
+      clearTimeout(toastTimer)
+      toastTimer = setTimeout(() => { t.hidden = true }, 8000)
     }
 
-    // Calendário sempre começa em hoje e não deixa escolher o futuro. Se o app
-    // ficar aberto de um dia pro outro, "hoje" é recalculado ao focar.
-    function hojeISO() {
-      const d = new Date()
-      return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
-    }
+    // ── cabeçalho: data e status ──
+    const agora = new Date()
+    $('hoje').textContent = `${SEMANA[agora.getDay()][0].toUpperCase() + SEMANA[agora.getDay()].slice(1)}, ${agora.getDate()} de ${MESES[agora.getMonth()]}`
     $('data').value = hojeISO()
     $('data').max = hojeISO()
-    $('data').onfocus = () => { $('data').max = hojeISO() }
+    $('data').addEventListener('focus', () => { $('data').max = hojeISO() })
 
-    // ── Progresso: uma linha por dia, atualizada a cada fase ──
-    const PESO_FASE = { espera: 0, ponto: 1, planilha: 2, conferido: 3, gravar: 3, pronto: 4, pulado: 4, erro: 4 }
-    const ICONE_FASE = { espera: '○', ponto: '⏳', planilha: '⏳', conferido: '⏳', gravar: '⏳', pronto: '✓', pulado: '–', erro: '✗' }
-    const ROTULO_FASE = { ponto: 'lendo o ponto', planilha: 'conferindo com a planilha', conferido: 'conferido', gravar: 'gravando na planilha', pronto: 'pronto', pulado: 'pulado', erro: 'erro' }
-    let prog = { gravando: true, dias: new Map() }
-
-    function atualizarBarra() {
-      let soma = 0
-      for (const d of prog.dias.values()) soma += PESO_FASE[d.fase] ?? 0
-      const max = prog.dias.size * 4
-      $('progBarra').style.width = (max ? Math.round((100 * soma) / max) : 0) + '%'
+    // null = ainda não se sabe (ou o app não respondeu) — não acusa nada como faltando.
+    let status = null
+    async function atualizarStatus() {
+      try {
+        status = await window.agent.statusBot()
+      } catch {
+        status = null
+        if (ocupadoAgora) return
+        $('status').className = 'status aviso'
+        $('statusTexto').textContent = 'Reinicie o app'
+        $('status').title = 'A tela é mais nova que o app aberto — feche pelo ícone da bandeja (Sair) e abra de novo.'
+        return renderAtencao()
+      }
+      const faltam = [!status.planilha && 'planilha', !status.ponto && 'ponto', !status.regras && 'regras'].filter(Boolean)
+      if (ocupadoAgora) return
+      $('status').className = 'status ' + (faltam.length ? 'aviso' : 'ok')
+      $('statusTexto').textContent = faltam.length ? `Configurar ${faltam.join(', ')}` : 'Pronto · ponto e planilha'
+      renderAtencao()
+    }
+    function statusOcupado(texto) {
+      $('status').className = 'status ocupado'
+      $('status').replaceChildren(el('span', { html: GIRA }), el('span', { id: 'statusTexto', textContent: texto }))
+    }
+    function statusNormal() {
+      $('status').replaceChildren(el('span', { className: 'ponto' }), el('span', { id: 'statusTexto' }))
+      atualizarStatus()
     }
 
+    // ── navegação ──
+    $('navRegras').onclick = () => window.agent.abrirRegras()
+    $('navRelatorios').onclick = () => window.agent.abrirRelatorios()
+    $('lnkRelatorios').onclick = () => window.agent.abrirRelatorios()
+    $('btnConfig').onclick = () => window.agent.abrirConfig()
+    $('btnDesfazerAnt').onclick = async () => mostrarDesfeita(await window.agent.desfazerDeRelatorio())
+    window.addEventListener('focus', () => { if (!ocupadoAgora) { atualizarStatus(); carregarAtividade() } })
+
+    function ocupado(sim) {
+      ocupadoAgora = sim
+      for (const b of document.querySelectorAll('#chips .chip, #btnCmd, #btnSim, #data')) b.disabled = sim
+      if (sim) statusOcupado($('simular').checked ? 'Simulando…' : 'Trabalhando…')
+      else statusNormal()
+    }
+
+    // ── comando (texto livre ou sugestão) ──
+    $('formCmd').addEventListener('submit', e => { e.preventDefault(); executar($('cmd').value) })
+    for (const c of document.querySelectorAll('#chips .chip')) {
+      c.addEventListener('click', () => {
+        const a = c.dataset.cmd
+        if (a === 'dia' || a === 'semana') return rodar({ acao: a, data: $('data').value, simular: $('simular').checked }, c.textContent)
+        executar(c.textContent)
+      })
+    }
+
+    function executar(texto) {
+      const r = window.interpretarComando(texto, hojeISO())
+      if (r.acao === 'dia' || r.acao === 'semana') {
+        if (r.data) $('data').value = r.data
+        if (r.simular) $('simular').checked = true
+        return rodar({ acao: r.acao, data: r.data, simular: $('simular').checked }, texto)
+      }
+      if (r.acao === 'regras') return window.agent.abrirRegras()
+      if (r.acao === 'config') return window.agent.abrirConfig()
+      if (r.acao === 'relatorios') return window.agent.abrirRelatorios()
+      if (r.acao === 'historico') { carregarAtividade(); return $('atividade').scrollIntoView({ behavior: 'smooth', block: 'center' }) }
+      if (r.acao === 'desfazer') return $('btnDesfazerAnt').click()
+      if (r.acao === 'pendencias') {
+        if (!ultimoLote) return responder(texto, [el('p', { className: 'fala', textContent: 'Ainda não há pendências nesta sessão. Rode "Preencher dia" ou "Conferir semana" e eu listo quem precisa de revisão.' })])
+        abrirDetalhes('pendencias')
+        return
+      }
+      responder(texto, [
+        el('p', { className: 'fala', textContent: r.erro || 'Ainda não entendi esse pedido.' }),
+        el('div', { className: 'sec', style: 'font-size:13px', textContent: 'Experimente: "preencher hoje", "conferir semana de 21/09", "simular ontem", "pendências", "abrir regras".' }),
+      ])
+    }
+
+    // ── execução com progresso ──
+    async function rodar({ acao, data, simular }, texto) {
+      if (ocupadoAgora) return
+      if (!data) return responder(texto, [el('p', { className: 'fala', textContent: 'Escolha um dia no calendário.' })])
+      if (data > hojeISO()) return responder(texto, [el('p', { className: 'fala', textContent: 'Esse dia ainda não aconteceu — escolha hoje ou uma data anterior.' })])
+      ocupado(true)
+      $('resposta').hidden = true
+      const r = await window.agent.preencher({ data, modo: acao, apenasConferir: simular, forcar: $('forcar').checked })
+      ocupado(false)
+      if (!r.ok) {
+        $('progresso').hidden = true
+        return responderErro(texto, r.message)
+      }
+      ultimoLote = r.lote
+      renderTudo(r.lote, simular ? 'simulacao' : 'gravado', texto, r.escrita)
+      if (r.escrita && r.escrita.dias.some(d => d.escritas.length)) {
+        const n = r.escrita.dias.reduce((s, d) => s + d.escritas.length, 0)
+        toast(`${plural(n, 'célula gravada', 'células gravadas')} na planilha`, { rotulo: 'Desfazer', fn: desfazerUltima })
+      }
+      carregarAtividade()
+    }
+
+    // ── progresso ao vivo ──
+    const PESO = { espera: 0, ponto: 1, planilha: 2, conferido: 3, gravar: 3, pronto: 4, pulado: 4, erro: 4 }
+    const FASE = { espera: 'Aguardando', ponto: 'Lendo o ponto', planilha: 'Conferindo', conferido: 'Conferido', gravar: 'Gravando', pronto: 'Pronto', pulado: 'Pulado', erro: 'Erro' }
+    let prog = { gravando: true, dias: new Map() }
+    function atualizarBarra() {
+      let soma = 0
+      for (const d of prog.dias.values()) soma += PESO[d.fase] ?? 0
+      const pct = prog.dias.size ? Math.round((100 * soma) / (prog.dias.size * 4)) : 0
+      $('progBarra').style.width = pct + '%'
+      $('progPct').textContent = pct + '%'
+    }
     window.agent.onProgresso(ev => {
       if (ev.tipo === 'inicio') {
         prog = { gravando: ev.gravando, dias: new Map() }
         $('progresso').hidden = false
-        $('progBarra').parentElement.className = 'barra'
-        $('progTitulo').textContent = ev.gravando ? `Preenchendo ${ev.datas.length} dia(s)...` : `Simulando ${ev.datas.length} dia(s) — nada será gravado...`
+        $('progBarraFundo').className = 'barra'
+        $('progTitulo').textContent = ev.gravando ? `Preenchendo ${plural(ev.datas.length, 'dia', 'dias')}…` : `Simulando ${plural(ev.datas.length, 'dia', 'dias')} — nada será gravado`
         $('progEtapa').textContent = ''
         $('progDias').replaceChildren(...ev.datas.map(data => {
-          const li = el('li', { className: 'espera' },
-            el('span', { className: 'ic', textContent: ICONE_FASE.espera }),
-            el('span', { className: 'nome', textContent: nomeDia(data) }),
-            el('span', { className: 'det', textContent: 'aguardando' }))
-          prog.dias.set(data, { li, fase: 'espera' })
-          return li
+          const card = el('div', { className: 'prog-dia espera' },
+            el('div', { className: 't' }, el('span', { textContent: nomeDia(data) }), el('span', { className: 'ic' })),
+            el('span', { className: 'fase', textContent: FASE.espera }),
+            el('span', { className: 'det', textContent: 'na fila' }))
+          prog.dias.set(data, { card, fase: 'espera' })
+          return card
         }))
         return atualizarBarra()
       }
       if (ev.tipo === 'etapa') { $('progEtapa').textContent = ev.texto; return }
       if (ev.tipo === 'fim') {
-        const problemas = [...prog.dias.values()].some(d => d.fase === 'erro')
-        $('progBarra').parentElement.className = 'barra ' + (problemas ? 'falha' : 'ok')
+        const problema = [...prog.dias.values()].some(d => d.fase === 'erro')
+        $('progBarraFundo').className = 'barra ' + (problema ? 'falha' : 'ok')
         $('progBarra').style.width = '100%'
-        $('progTitulo').textContent = problemas ? 'Concluído com problemas — veja abaixo' : (prog.gravando ? 'Concluído' : 'Simulação concluída — nada foi gravado')
+        $('progPct').textContent = '100%'
+        $('progTitulo').textContent = problema ? 'Concluído com problemas' : (prog.gravando ? 'Concluído' : 'Simulação concluída — nada foi gravado')
         $('progEtapa').textContent = ''
         return
       }
       const d = prog.dias.get(ev.data)
       if (!d) return
       d.fase = ev.fase
-      d.li.className = ev.fase
-      d.li.children[0].textContent = ICONE_FASE[ev.fase] ?? ''
-      d.li.children[2].textContent = ev.detalhe || ROTULO_FASE[ev.fase] || ''
-      $('progEtapa').textContent = `${nomeDia(ev.data)}: ${ROTULO_FASE[ev.fase] ?? ''}`
+      const classe = ['ponto', 'planilha', 'conferido', 'gravar'].includes(ev.fase) ? 'ativo' : ev.fase
+      d.card.className = 'prog-dia ' + classe
+      d.card.querySelector('.ic').innerHTML = classe === 'ativo' ? GIRA : ev.fase === 'pronto' ? OK : ev.fase === 'erro' ? X : ''
+      d.card.querySelector('.fase').textContent = FASE[ev.fase] || ''
+      d.card.querySelector('.det').textContent = ev.detalhe || ''
+      $('progEtapa').textContent = `${diaLongo(ev.data)} · ${(FASE[ev.fase] || '').toLowerCase()}`
       atualizarBarra()
     })
 
-    // Erro com atalho pra tela que resolve (login do ponto, conexão, regras).
-    function mostrarErro(texto) {
-      const box = el('div', { className: 'msg err', textContent: texto })
-      if (/Horários e regras/.test(texto)) box.append(el('button', { textContent: 'Abrir Horários e regras', onclick: () => window.agent.abrirRegras() }))
-      else if (/Configurações|ponto|Apps Script|planilha|Service Account/i.test(texto)) box.append(el('button', { textContent: 'Abrir Configurações', onclick: () => window.agent.abrirConfig() }))
-      $('out').replaceChildren(box)
+    // ── resposta do bot ──
+    function responder(texto, corpo) {
+      const r = $('resposta')
+      r.replaceChildren(
+        texto ? el('div', { className: 'bolha-eu', textContent: texto }) : null,
+        el('div', { className: 'bot' }, el('div', { className: 'avatar', html: LOGO }), el('div', { className: 'corpo' }, ...corpo)))
+      r.hidden = false
+      r.classList.remove('entrar'); void r.offsetWidth; r.classList.add('entrar')
+    }
+    function responderErro(texto, msg) {
+      const acoes = []
+      if (/Horários e regras|Regras ainda/.test(msg)) acoes.push(el('button', { className: 'btn primario pequeno', textContent: 'Abrir Horários e regras', onClick: () => window.agent.abrirRegras() }))
+      else if (/Configura|ponto|Apps Script|planilha|Service Account|login/i.test(msg)) acoes.push(el('button', { className: 'btn primario pequeno', textContent: 'Abrir Configurações', onClick: () => window.agent.abrirConfig() }))
+      responder(texto, [
+        el('div', { className: 'alerta erro' }, el('span', { className: 'ponto' }), el('div', {}, el('b', { textContent: 'Não consegui concluir' }), el('span', { textContent: msg }), acoes.length ? el('div', { className: 'acoes' }, ...acoes) : null)),
+      ])
     }
 
-    // modo 'dia' = só a data do calendário · 'semana' = segunda a sábado dela.
-    async function preencher(modo) {
-      const data = $('data').value
-      if (!data) return msg('err', 'Escolha um dia no calendário.')
-      if (data > hojeISO()) return msg('err', 'Não dá pra preencher um dia que ainda não aconteceu.')
-      const simular = $('simular').checked
+    function contar(lote) {
+      const t = { escrever: 0, revisar: 0, divergente: 0, nao_encontrado: 0, confere: 0 }
+      for (const p of lote.planos) for (const k of Object.keys(t)) t[k] += p.resumo[k] || 0
+      t.atencao = t.revisar + t.divergente + t.nao_encontrado
+      for (const p of lote.planos) t.atencao += (p.resumo.ambiguo || 0) + (p.resumo.sem_linha_no_mes || 0)
+      return t
+    }
+
+    function renderTudo(lote, modo, texto, escrita) {
+      const t = contar(lote)
+      const gravadas = escrita ? escrita.dias.reduce((s, d) => s + d.escritas.length, 0) : 0
+      const nDias = lote.planos.length
+      const frase = el('p', { className: 'fala' })
+      if (modo === 'simulacao') frase.append(el('b', { textContent: 'Simulação. ' }), `Conferi ${plural(nDias, 'dia', 'dias')}: ${plural(t.escrever, 'célula seria preenchida', 'células seriam preenchidas')}. Nada foi gravado.`)
+      else if (escrita && escrita.erro) frase.append(el('b', { textContent: 'Parei no meio. ' }), escrita.erro)
+      else frase.append(el('b', { textContent: 'Pronto. ' }), `Conferi ${plural(nDias, 'dia', 'dias')} e preenchi ${plural(gravadas, 'célula', 'células')}.`)
+      if (t.atencao) frase.append(` ${plural(t.atencao, 'caso precisa', 'casos precisam')} da sua revisão.`)
+      frase.append(el('span', { className: 'hora', textContent: `hoje, ${horaAgora()}` }))
+
+      const porDia = new Map((escrita ? escrita.dias : []).map(d => [d.data, d]))
+      const mini = el('div', { className: 'dias-mini' }, ...lote.planos.map(p => {
+        const n = modo === 'simulacao' ? p.escritas.length : (porDia.get(p.data)?.escritas.length || 0)
+        const pend = (p.resumo.revisar || 0) + (p.resumo.divergente || 0) + (p.resumo.nao_encontrado || 0)
+        return el('div', { className: 'dia-mini' },
+          el('div', { className: 't' }, el('span', { textContent: nomeDia(p.data) }), el('span', { html: pend ? '' : OK })),
+          el('span', { className: 'n', textContent: `${n} ${modo === 'simulacao' ? 'a preencher' : 'preenchidas'}` }),
+          el('span', { className: 'nota', style: `color:${pend ? '#8A4F00' : '#177245'}`, textContent: pend ? `${pend} p/ revisão` : 'tudo certo' }))
+      }), ...lote.pulados.map(p => el('div', { className: 'dia-mini' },
+        el('div', { className: 't' }, el('span', { textContent: nomeDia(p.data) })),
+        el('span', { className: 'nota ter', textContent: /domingo/i.test(p.motivo) ? 'domingo' : /oculta/i.test(p.motivo) ? 'feriado' : 'pulado' }))))
+
+      const acoes = el('div', { className: 'acoes-linha' })
+      if (t.atencao) acoes.append(el('button', { className: 'btn primario', textContent: `Revisar ${plural(t.atencao, 'pendência', 'pendências')}`, onClick: () => abrirDetalhes('pendencias') }))
+      if (modo === 'simulacao' && t.escrever) acoes.append(el('button', { className: 'btn primario', textContent: `Gravar agora (${t.escrever})`, onClick: gravarSimulacao }))
+      acoes.append(el('button', { className: 'btn', textContent: 'Ver detalhes', onClick: () => abrirDetalhes() }))
+      if (gravadas) acoes.append(el('button', { className: 'btn fantasma', textContent: 'Desfazer', onClick: desfazerUltima }))
+
+      const extras = []
+      if (lote.erros.length) extras.push(el('div', { className: 'alerta erro' }, el('span', { className: 'ponto' }), el('div', {}, el('b', { textContent: 'Dias com problema' }), el('span', { textContent: lote.erros.map(e => `${e.data ? diaLongo(e.data) : e.arquivo}: ${e.motivo}`).join('\n') }))))
+      responder(texto, [frase, mini, acoes, ...extras])
+      renderFrequencia(lote)
+      renderAtencao()
+      renderDetalhes(lote)
+    }
+
+    async function gravarSimulacao(ev) {
+      const btn = ev.currentTarget
+      if (!confirm('Gravar na planilha o que a simulação mostrou?\n\nCélulas que alguém preencher nesse meio tempo serão puladas.')) return
+      btn.disabled = true
       ocupado(true)
-      $('out').replaceChildren()
-      const r = await window.agent.preencher({ data, modo, apenasConferir: simular, forcar: $('forcar').checked })
+      const r = await window.agent.escrever()
       ocupado(false)
-      if (!r.ok) {
-        $('progresso').hidden = true
-        return mostrarErro(r.message)
-      }
-      render(r.lote, simular ? 'conferir' : 'gravado')
-      if (r.escrita) $('out').prepend(boxEscrita(r.escrita))
+      if (!r.ok && !r.dias?.length) return responderErro('Gravar agora', r.message)
+      const n = (r.dias || []).reduce((s, d) => s + d.escritas.length, 0)
+      toast(`${plural(n, 'célula gravada', 'células gravadas')} na planilha`, n ? { rotulo: 'Desfazer', fn: desfazerUltima } : null)
+      carregarAtividade()
     }
 
-    $('btnDia').onclick = () => preencher('dia')
-    $('btnSemana').onclick = () => preencher('semana')
-    $('btnRel').onclick = () => window.agent.abrirRelatorios()
-    $('btnRegras').onclick = () => window.agent.abrirRegras()
-    $('btnConfig').onclick = () => window.agent.abrirConfig()
-    $('btnDesfazerAnt').onclick = async () => mostrarDesfeita(await window.agent.desfazerDeRelatorio())
+    async function desfazerUltima() {
+      if (!confirm('Apagar as células gravadas pelo bot nesta escrita?\n\nSó são apagadas as que ainda tiverem exatamente o código que o bot gravou — o que alguém mudou depois fica.')) return
+      mostrarDesfeita(await window.agent.desfazer())
+    }
+    function mostrarDesfeita(r) {
+      if (!r || (!r.ok && r.cancelado)) return
+      if (!r.ok) return responderErro('Desfazer', r.message)
+      const apagadas = (r.dias || []).reduce((s, d) => s + d.apagadas.length, 0)
+      const mantidas = (r.dias || []).flatMap(d => d.mantidas)
+      let voltaram = null
+      for (const d of r.dias || []) for (const p of ultimoLote?.planos || []) {
+        if (p.data !== d.data) continue
+        for (const i of p.itens) if (i.situacao === 'justificado' && d.apagadas.includes(i.celula)) {
+          Object.assign(i, { situacao: i.situacaoAntes, motivo: i.motivoAntes, codigo: null }); voltaram = p.data
+        }
+      }
+      if (voltaram) reRenderizar(voltaram)
+      responder('Desfazer', [
+        el('p', { className: 'fala' }, el('b', { textContent: 'Desfeito. ' }), `Apaguei ${plural(apagadas, 'célula', 'células')} que o bot tinha gravado.`),
+        mantidas.length ? el('div', { className: 'alerta aviso' }, el('span', { className: 'ponto' }), el('div', {}, el('b', { textContent: `${plural(mantidas.length, 'célula mantida', 'células mantidas')}` }), el('span', { textContent: 'Alguém mudou depois da escrita: ' + mantidas.map(m => `${m.celula} (agora "${m.valorEncontrado}")`).join(', ') }))) : null,
+      ])
+      toast(`${plural(apagadas, 'célula apagada', 'células apagadas')}`)
+      carregarAtividade()
+    }
 
-    // ── Avançado: arquivos HTML ──
+    // ── frequência (do último resultado) ──
+    function codigoFinal(i) {
+      if (i.situacao === 'escrever' || i.situacao === 'confere' || i.situacao === 'justificado') return i.codigo
+      if (i.situacao === 'divergente' || i.situacao === 'ja_lancado') return (i.valorAtual || '').trim().toUpperCase()
+      if (['revisar', 'nao_encontrado', 'ambiguo', 'sem_linha_no_mes'].includes(i.situacao)) return 'REV'
+      return null
+    }
+    function renderFrequencia(lote) {
+      const f = $('freq')
+      if (!lote || !lote.planos.length) {
+        f.replaceChildren(
+          el('div', { className: 'cabeca' }, el('div', {}, el('h2', { className: 'titulo-secao', textContent: 'Frequência' }), el('div', { className: 'sub', textContent: 'Aparece aqui depois de preencher ou conferir.' }))),
+          el('div', { className: 'vazio' },
+            el('div', { className: 'icone', html: '<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#6B6B73" stroke-width="1.8" stroke-linecap="round"><path d="M4 20V10M10 20V4M16 20v-7M22 20H2"/></svg>' }),
+            el('b', { textContent: 'Sem dados ainda' }),
+            el('span', { textContent: 'Clique em "Conferir semana" para ver pontualidade, atrasos e pendências dia a dia.' }),
+            el('button', { className: 'btn primario pequeno', textContent: 'Conferir semana', onClick: () => rodar({ acao: 'semana', data: $('data').value, simular: $('simular').checked }, 'Conferir semana') })))
+        return
+      }
+      const dias = lote.planos.map(p => {
+        const c = { '.': 0, P: 0, REV: 0 }
+        for (const i of p.itens) { const k = codigoFinal(i); if (k in c) c[k]++ }
+        return { data: p.data, ...c }
+      })
+      const pont = dias.reduce((s, d) => s + d['.'], 0), atr = dias.reduce((s, d) => s + d.P, 0), rev = dias.reduce((s, d) => s + d.REV, 0)
+      const taxa = pont + atr ? Math.round((100 * pont) / (pont + atr)) : null
+      const max = Math.max(1, ...dias.map(d => d['.'] + d.P + d.REV))
+      const px = n => Math.round((n / max) * 124)
+      const primeiro = lote.planos[0].data, ultimo = lote.planos[lote.planos.length - 1].data
+      const kpi = (r, v, d) => el('div', { className: 'kpi' }, el('span', { className: 'r', textContent: r }), el('span', { className: 'v', textContent: v }), el('span', { className: 'd', textContent: d }))
+      f.replaceChildren(
+        el('div', { className: 'cabeca' }, el('div', {},
+          el('h2', { className: 'titulo-secao', textContent: 'Frequência' }),
+          el('div', { className: 'sub', textContent: primeiro === ultimo ? diaLongo(primeiro) : `${nomeDia(primeiro)} a ${nomeDia(ultimo)} · colaboradores do seu ponto` }))),
+        el('div', { className: 'kpis' },
+          kpi('Pontualidade', taxa === null ? '—' : taxa + '%', 'pontuais ÷ (pontuais + atrasos)'),
+          kpi('Atrasos', String(atr), 'marcados com P'),
+          kpi('Para revisão', String(rev), 'sem ponto, nome ou linha'),
+          kpi('Dias', String(lote.planos.length), `${plural(lote.pulados.length, 'pulado', 'pulados')}`)),
+        el('div', { className: 'grafico' },
+          el('div', { className: 'barras' }, ...dias.map(d => el('div', { className: 'col' },
+            el('div', { className: 'pilha', title: `${d['.']} pontuais · ${d.P} atrasos · ${d.REV} p/ revisão` },
+              d.REV ? el('div', { className: 'r', style: `height:${px(d.REV)}px` }) : null,
+              d.P ? el('div', { className: 'a', style: `height:${px(d.P)}px` }) : null,
+              el('div', { className: 'p', style: `height:${px(d['.'])}px` })),
+            el('span', { className: 'dia', textContent: nomeDia(d.data) }))),
+            ...lote.pulados.map(p => el('div', { className: 'col' }, el('div', { className: 'pilha vazia' }), el('span', { className: 'dia', textContent: nomeDia(p.data) })))),
+          el('div', { className: 'legenda' },
+            el('span', {}, el('i', { style: 'background:#2451D6' }), 'Pontual (.)'),
+            el('span', {}, el('i', { style: 'background:#E3A13B' }), 'Atraso (P)'),
+            el('span', {}, el('i', { style: 'background:#C4C4BE' }), 'Para revisão'))))
+    }
+
+    // ── precisa da sua atenção ──
+    function renderAtencao() {
+      const itens = []
+      const add = (cor, titulo, texto, acao, fn) => itens.push(el('div', { className: 'item-atencao' },
+        el('span', { className: 'ponto', style: `background:${cor}` }),
+        el('div', {}, el('b', { textContent: titulo }), el('p', { textContent: texto }), acao ? el('a', { textContent: acao, onClick: fn }) : null)))
+      if (status && !status.planilha) add('#B42318', 'Planilha não conectada', 'Sem ela o bot não consegue ler nem gravar.', 'Abrir Configurações', () => window.agent.abrirConfig())
+      if (status && !status.ponto) add('#B42318', 'Login do ponto não configurado', 'O bot usa o seu login da Central do Funcionário.', 'Abrir Configurações', () => window.agent.abrirConfig())
+      if (status && !status.regras) add('#E3A13B', 'Horários e regras vazios', 'Defina entrada padrão, tolerância e horário de corte.', 'Abrir Horários e regras', () => window.agent.abrirRegras())
+      if (ultimoLote) {
+        const itensDe = s => ultimoLote.planos.flatMap(p => p.itens.filter(i => i.situacao === s).map(i => ({ ...i, data: p.data })))
+        const rev = itensDe('revisar'), nao = itensDe('nao_encontrado'), div = itensDe('divergente')
+        if (rev.length) add('#E3A13B', `${plural(rev.length, 'pessoa sem ponto', 'pessoas sem ponto')}`, `${[...new Set(rev.map(i => nomeDia(i.data)))].join(', ')}. Pode ser folga, atestado ou falta — só você decide.`, 'Revisar', () => abrirDetalhes('pendencias'))
+        if (nao.length) add('#B42318', `${plural(nao.length, 'nome não encontrado', 'nomes não encontrados')}`, `${nao[0].motivo} Depois de cadastrar, confira o dia de novo para sumir daqui.`, 'Cadastrar apelido', () => window.agent.abrirRegras())
+        if (div.length) add('#B42318', `${plural(div.length, 'lançamento diverge', 'lançamentos divergem')} do ponto`, 'O bot não alterou nada — confira se o horário individual está certo.', 'Ver quais', () => abrirDetalhes('pendencias'))
+        if (ultimoLote.erros.length) add('#B42318', `${plural(ultimoLote.erros.length, 'dia com erro', 'dias com erro')}`, ultimoLote.erros[0].motivo, null)
+      }
+      $('atencao').replaceChildren(...(itens.length ? itens : [el('div', { className: 'vazio', style: 'padding:14px 8px 18px' },
+        el('div', { className: 'icone', html: OK }), el('b', { textContent: 'Nada pendente' }), el('span', { textContent: 'Quando algo precisar de você, aparece aqui.' }))]))
+    }
+
+    // ── atividade recente ──
+    async function carregarAtividade() {
+      const h = await window.agent.historico()
+      $('atividade').replaceChildren(...(h.length ? h.map(e => el('div', { className: 'evento' },
+        el('div', { className: 'trilho' }, el('i', { style: `background:${e.tipo === 'escrita' ? '#2451D6' : '#E3A13B'}` }), el('u')),
+        el('div', { className: 'txt' },
+          el('b', { textContent: e.tipo === 'escrita' ? `${nomeDia(e.data)} preenchido · ${plural(e.celulas, 'célula', 'células')}` : `Escrita desfeita · ${nomeDia(e.data)} · ${plural(e.celulas, 'célula', 'células')}` }),
+          el('span', { textContent: quando(e.quando) })))) : [el('div', { className: 'vazio', style: 'padding:8px 0 4px' },
+        el('b', { textContent: 'Nenhuma execução ainda' }), el('span', { textContent: 'Quando você preencher um dia, ele aparece aqui.' }))]))
+    }
+
+    // ── detalhes por dia ──
+    const FILTROS = [
+      ['pendencias', 'Precisa de você', ['revisar', 'divergente', 'nao_encontrado', 'ambiguo', 'sem_linha_no_mes']],
+      ['preenchidos', 'Preenchidos', ['escrever', 'justificado']],
+      ['conferem', 'Já conferem', ['confere', 'ja_lancado']],
+      ['outros', 'Outros setores', ['ausente_no_ponto']],
+    ]
+    function badgeDe(i) {
+      if (i.situacao === 'escrever' || i.situacao === 'confere' || i.situacao === 'justificado') {
+        const c = i.codigo
+        const cls = c === '.' ? 'acao' : c === 'P' ? 'aviso' : c === 'FE' ? 'ok' : ''
+        return el('span', { className: 'badge ' + cls }, el('span', { className: 'cod', textContent: c }), ROT[i.situacao])
+      }
+      const cls = { revisar: 'aviso', divergente: 'erro', nao_encontrado: 'erro', ambiguo: 'erro', sem_linha_no_mes: 'aviso' }[i.situacao] || ''
+      return el('span', { className: 'badge ' + cls, textContent: ROT[i.situacao] || i.situacao })
+    }
+    // Só quem ficou "sem ponto" (célula vazia) pode ser justificado — o resto
+    // ou não tem célula (nome/linha não achados) ou já tem valor (não mexemos).
+    const podeJustificar = i => i.situacao === 'revisar' && !!i.celula
+    function tabela(itens, plano) {
+      if (!itens.length) return el('div', { className: 'vazio', style: 'padding:14px' }, el('span', { textContent: 'Nada nesta categoria.' }))
+      const comJust = itens.some(podeJustificar)
+      const escolhas = new Map() // célula → código escolhido
+      const btnGravar = el('button', { className: 'btn primario pequeno', textContent: 'Gravar justificativas', disabled: true })
+      const atualizarBtn = () => {
+        btnGravar.disabled = !escolhas.size
+        btnGravar.textContent = escolhas.size ? `Gravar ${plural(escolhas.size, 'justificativa', 'justificativas')}` : 'Gravar justificativas'
+      }
+      const seletor = i => {
+        const s = el('select', { className: 'just', 'aria-label': `Justificar ${i.nomePlanilha || i.nomePonto}` },
+          el('option', { value: '', textContent: 'Justificar…' }),
+          ...JUSTIFICATIVAS.map(([c, rot]) => el('option', { value: c, textContent: `${c} · ${rot}` })))
+        s.addEventListener('change', () => { if (s.value) escolhas.set(i.celula, s.value); else escolhas.delete(i.celula); atualizarBtn() })
+        return s
+      }
+      const tb = el('tbody', {}, ...itens.map(i => el('tr', {},
+        el('td', {}, el('div', { style: 'font-weight:500', textContent: i.nomePlanilha || i.nomePonto || '—' }), el('div', { className: 'ter', style: 'font-size:12px', textContent: i.adm ? 'ADM ' + i.adm : '' })),
+        el('td', { className: 'mono', textContent: i.ponto ? (i.ponto.status === 'batido' ? i.ponto.entrada1 : i.ponto.status === 'ferias' ? 'férias' : '—') : '—' }),
+        el('td', { className: 'mono ter', textContent: i.horario ? i.horario.previsto : '' }),
+        el('td', {}, badgeDe(i)),
+        el('td', { className: 'motivo', textContent: i.motivo }),
+        comJust ? el('td', {}, podeJustificar(i) ? seletor(i) : null) : null,
+        el('td', { className: 'mono', style: 'text-align:right', textContent: i.celula || '—' }))))
+      const cols = ['Colaborador', 'Ponto', 'Previsto', 'Situação', 'Por quê', ...(comJust ? ['Justificar'] : []), 'Célula']
+      const tab = el('table', {}, el('thead', {}, el('tr', {}, ...cols.map((h, k) => el('th', { textContent: h, style: k === cols.length - 1 ? 'text-align:right' : '' })))), tb)
+      if (!comJust) return tab
+      btnGravar.addEventListener('click', () => gravarJustificativas(plano, [...escolhas].map(([celula, codigo]) => ({ celula, codigo })), btnGravar))
+      return el('div', {}, tab, el('div', { className: 'just-rodape' },
+        el('span', { className: 'ter', textContent: 'Escolha o código de quem ficou sem ponto. Só grava em célula ainda vazia — dá pra desfazer.' }), btnGravar))
+    }
+
+    async function gravarJustificativas(plano, itens, btn) {
+      if (!itens.length || ocupadoAgora) return
+      const nomes = itens.map(x => { const i = plano.itens.find(i => i.celula === x.celula); return `${i.nomePlanilha || i.nomePonto} → ${x.codigo}` })
+      if (!confirm(`Gravar na aba ${plano.aba} (${diaLongo(plano.data)})?\n\n${nomes.join('\n')}`)) return
+      btn.disabled = true
+      ocupado(true)
+      const r = await window.agent.justificar({ data: plano.data, itens })
+      ocupado(false)
+      if (!r.ok) { btn.disabled = false; return responderErro('Justificar', r.message) }
+      // Atualiza a tela: quem foi gravado sai das pendências e passa pra "Preenchidos".
+      for (const e of r.escritas) {
+        const i = plano.itens.find(i => i.celula === e.celula)
+        Object.assign(i, { situacaoAntes: i.situacao, motivoAntes: i.motivo, situacao: 'justificado', codigo: e.codigo, motivo: `Justificado por você: ${e.codigo} · ${NOME_CODIGO[e.codigo] || ''}` })
+      }
+      reRenderizar(plano.data)
+      const msg = `${plural(r.escritas.length, 'justificativa gravada', 'justificativas gravadas')}`
+      if (r.puladas.length) {
+        responder('Justificar', [el('div', { className: 'alerta aviso' }, el('span', { className: 'ponto' }), el('div', {}, el('b', { textContent: `${msg}; ${plural(r.puladas.length, 'célula pulada', 'células puladas')}` }), el('span', { textContent: 'Alguém preencheu antes: ' + r.puladas.map(p => `${p.celula} ("${p.valorEncontrado}")`).join(', ') })))])
+      }
+      toast(msg, r.escritas.length ? { rotulo: 'Desfazer', fn: desfazerUltima } : null)
+      carregarAtividade()
+    }
+
+    // Redesenha frequência/atenção/detalhes mantendo aberto o dia que estava sendo mexido.
+    function reRenderizar(dataAberta) {
+      if (!ultimoLote) return
+      renderFrequencia(ultimoLote)
+      renderAtencao()
+      renderDetalhes(ultimoLote)
+      const det = [...document.querySelectorAll('#detalhesDias details.dia')][ultimoLote.planos.findIndex(p => p.data === dataAberta)]
+      if (det) det.open = true
+    }
+    function renderDetalhes(lote) {
+      // Aviso que vale para todos os dias (ex.: da aba do mês) aparece uma vez só, no topo.
+      const comuns = lote.planos.length ? [...new Set(lote.planos[0].avisos)].filter(a => lote.planos.every(p => p.avisos.includes(a))) : []
+      const topo = comuns.length ? el('div', { className: 'alerta aviso', style: 'margin-bottom:8px' }, el('span', { className: 'ponto' }), el('div', {}, el('b', { textContent: 'Avisos da planilha' }), el('span', { textContent: comuns.join('\n') }))) : null
+      $('detalhesDias').replaceChildren(...(topo ? [topo] : []), ...lote.planos.map(p => {
+        const corpo = el('div', { className: 'dia-corpo' })
+        const seg = el('div', { className: 'segmentos', role: 'tablist' })
+        const area = el('div')
+        const mostrar = chave => {
+          for (const b of seg.children) b.setAttribute('aria-selected', String(b.dataset.k === chave))
+          const f = FILTROS.find(x => x[0] === chave)
+          area.replaceChildren(tabela(p.itens.filter(i => f[2].includes(i.situacao)), p))
+        }
+        for (const [k, rot, sits] of FILTROS) {
+          const n = p.itens.filter(i => sits.includes(i.situacao)).length
+          seg.append(el('button', { className: 'aba', role: 'tab', textContent: `${rot} · ${n}`, onClick: () => mostrar(k), 'data-k': k }))
+        }
+        const pend = p.itens.filter(i => FILTROS[0][2].includes(i.situacao)).length
+        mostrar(pend ? 'pendencias' : 'preenchidos')
+        const avisos = [...new Set(p.avisos)].filter(a => !comuns.includes(a))
+        corpo.append(seg, area)
+        if (avisos.length) corpo.append(el('div', { className: 'alerta aviso' }, el('span', { className: 'ponto' }), el('div', {}, el('b', { textContent: 'Avisos deste dia' }), el('span', { textContent: avisos.join('\n') }))))
+        const det = el('details', { className: 'dia', 'data-pend': String(pend) },
+          el('summary', {}, el('span', { html: SETA }), el('span', { className: 'nome', textContent: `${diaLongo(p.data)}` }),
+            el('span', { className: 'resumo', textContent: `aba ${p.aba} · ${p.escritas.length} a preencher · ${pend} precisa(m) de você` }),
+            pend ? el('span', { className: 'badge aviso', textContent: `${pend}` }) : el('span', { html: OK })),
+          corpo)
+        return det
+      }))
+      $('detalhes').hidden = !lote.planos.length
+    }
+    function abrirDetalhes(filtro) {
+      $('detalhes').hidden = false
+      for (const d of document.querySelectorAll('#detalhesDias details.dia')) {
+        const abrir = filtro === 'pendencias' ? d.dataset.pend !== '0' : true
+        d.open = abrir
+        if (abrir && filtro === 'pendencias') d.querySelector('.aba[data-k="pendencias"]')?.click()
+      }
+      $('detalhes').scrollIntoView({ behavior: 'smooth', block: 'start' })
+    }
+
+    // ── avançado: arquivos HTML ──
     $('btnHtml').onclick = async () => {
       const r = await window.agent.pickHtmlFiles()
       if (!r) return
       htmlPaths = r.map(f => f.path)
-      $('htmlName').textContent = r.length === 1 ? r[0].name : `${r.length} arquivos: ${r.map(f => f.name).join(', ')}`
+      $('htmlName').textContent = r.length === 1 ? r[0].name : `${r.length} arquivos`
       $('htmlName').title = r.map(f => f.name).join('\n')
     }
     $('btnSim').onclick = async () => {
-      if (!htmlPaths.length) return msg('err', 'Escolha o(s) HTML(s) do ponto primeiro.')
+      if (!htmlPaths.length) return responder('Conferir arquivos', [el('p', { className: 'fala', textContent: 'Escolha o(s) HTML(s) do ponto primeiro.' })])
       ocupado(true)
       $('progresso').hidden = true
-      msg('info', 'Lendo os arquivos e a planilha...')
       const r = await window.agent.simular({ htmlPaths, forcar: $('forcar').checked })
       ocupado(false)
-      if (!r.ok) return mostrarErro(r.message)
-      render(r.lote, 'conferir')
+      if (!r.ok) return responderErro('Conferir arquivos', r.message)
+      ultimoLote = r.lote
+      renderTudo(r.lote, 'simulacao', 'Conferir arquivos do ponto', null)
     }
 
-    // "Gravar agora" depois de conferir: grava exatamente o que foi mostrado.
-    async function gravarConferido(btn, resumo) {
-      if (!confirm(`Gravar na planilha?\n\n${resumo}\n\nCélulas que alguém preencher nesse meio tempo serão puladas.`)) return
-      btn.disabled = true
-      const r = await window.agent.escrever()
-      $('out').prepend(boxEscrita({ erro: r.ok ? null : r.message, dias: r.dias || [] }))
-    }
-
-    function boxEscrita(escrita) {
-      const total = escrita.dias.reduce((n, d) => n + d.escritas.length, 0)
-      const box = el('div', { className: 'msg ' + (escrita.erro ? 'err' : 'ok') })
-      const linhas = escrita.dias.map(d =>
-        `${nomeDia(d.data)}: ${d.escritas.length} célula(s)` +
-        (d.escritas.length ? ` — ${d.escritas.map(e => e.celula + '="' + e.codigo + '"').join(', ')}` : '') +
-        (d.puladas.length ? `\n   puladas (alguém preencheu antes): ${d.puladas.map(p => p.celula + '="' + p.valorEncontrado + '"').join(', ')}` : ''))
-      box.textContent = (escrita.erro ? escrita.erro + '\n' : `Pronto: ${total} célula(s) preenchida(s).\n`) + linhas.join('\n')
-      if (total) {
-        const btn = el('button', { textContent: 'Desfazer esta escrita' })
-        btn.onclick = async () => {
-          if (!confirm('Apagar as células gravadas pelo bot nesta escrita?\n\nSó são apagadas as que ainda tiverem exatamente o código que o bot gravou — o que alguém tiver mudado depois fica.')) return
-          btn.disabled = true
-          mostrarDesfeita(await window.agent.desfazer())
-        }
-        box.append(btn)
-      }
-      return box
-    }
-
-    function mostrarDesfeita(r) {
-      if (!r.ok && r.cancelado) return
-      const box = el('div', { className: 'msg ' + (r.ok ? 'ok' : 'err') })
-      const linhas = (r.dias || []).map(d =>
-        `${nomeDia(d.data)}: ${d.apagadas.length} apagada(s)${d.apagadas.length ? ' (' + d.apagadas.join(', ') + ')' : ''}` +
-        (d.mantidas.length ? `\n   mantidas porque alguém mudou depois: ${d.mantidas.map(m => `${m.celula} (bot "${m.escritoPeloBot}" → agora "${m.valorEncontrado}")`).join(', ')}` : ''))
-      box.textContent = (r.ok ? 'Escrita desfeita.\n' : `Erro ao desfazer: ${r.message}\n`) + linhas.join('\n')
-      $('out').prepend(box)
-    }
-
-    // modo 'conferir' = prévia (nada gravado) · 'gravado' = resumo do que foi feito.
-    function render(lote, modo) {
-      const out = $('out')
-      out.replaceChildren()
-      const rot = s => (modo === 'gravado' && s === 'escrever' ? 'Preenchido pelo bot' : ROT[s])
-
-      if (modo === 'conferir') {
-        const total = lote.planos.reduce((n, p) => n + p.escritas.length, 0)
-        const resumo = lote.planos.filter(p => p.escritas.length).map(p => `${nomeDia(p.data)}: ${p.escritas.length} célula(s)`).join('\n')
-        const box = el('div', { className: 'msg info', textContent: `Simulação — nada foi gravado. ${total} célula(s) seriam preenchidas.` })
-        if (total) {
-          const btn = el('button', { className: 'danger', textContent: `Gravar agora (${total})` })
-          btn.onclick = () => gravarConferido(btn, resumo)
-          box.append(btn)
-        }
-        out.append(box)
-      }
-
-      if (lote.erros.length) {
-        out.append(el('div', { className: 'msg err', textContent: 'Dias não processados:\n' + lote.erros.map(e => `• ${e.data ? nomeDia(e.data) : e.arquivo}: ${e.motivo}`).join('\n') }))
-      }
-      if (lote.pulados.length) {
-        out.append(el('div', { className: 'msg warn', textContent: 'Pulados:\n' + lote.pulados.map(p => `• ${nomeDia(p.data)}: ${p.motivo}`).join('\n') }))
-      }
-
-      const soma = {}
-      for (const p of lote.planos) for (const s of ORDEM) soma[s] = (soma[s] || 0) + (p.resumo[s] || 0)
-      const cards = el('div', { className: 'cards' })
-      for (const s of ORDEM) {
-        if (!soma[s] || s === 'ausente_no_ponto') continue
-        const c = el('div', { className: 'card' }, el('div', { className: 'n', textContent: soma[s] }), el('div', { className: 'l', textContent: rot(s) }))
-        c.querySelector('.n').style.color = COR[s]
-        cards.append(c)
-      }
-      out.append(cards)
-
-      // Avisos iguais em vários dias (ex.: da aba do mês) aparecem uma vez só.
-      const avisos = [...new Set(lote.planos.flatMap(p => p.avisos))]
-      if (avisos.length) {
-        const ul = el('ul')
-        for (const a of avisos) ul.append(el('li', { textContent: a }))
-        out.append(el('div', { className: 'avisos' }, el('b', { textContent: 'Avisos' }), ul))
-      }
-
-      for (const p of lote.planos) out.append(renderDia(p, rot, lote.planos.length === 1))
-    }
-
-    function renderDia(p, rot, aberto) {
-      const resumo = ['escrever', 'revisar', 'divergente', 'nao_encontrado'].filter(s => p.resumo[s]).map(s => `${p.resumo[s]} ${rot(s).toLowerCase()}`).join(' · ')
-      const corpo = el('div', { className: 'corpo' })
-      const box = el('details', { className: 'dia', open: aberto || p.resumo.revisar > 0 || p.resumo.divergente > 0 || p.resumo.nao_encontrado > 0 },
-        el('summary', {}, `${nomeDia(p.data)} — aba ${p.aba}`, el('span', { className: 'res', textContent: resumo || 'nada a fazer' })),
-        corpo)
-
-      for (const s of ORDEM) {
-        const its = p.itens.filter(i => i.situacao === s)
-        if (!its.length) continue
-        if (s === 'ausente_no_ponto') {
-          // O ponto só lista quem está sob a responsabilidade de quem logou; a
-          // aba do mês tem todos os setores. Não é pendência — só referência.
-          const lista = el('div', { textContent: its.map(i => `${i.celula} ${i.nomePlanilha || 'ADM ' + i.adm}`).join(' · ') })
-          lista.style.cssText = 'font-size:12px;color:#64748b;padding:8px 0;line-height:1.6'
-          corpo.append(el('details', { className: 'outros' }, el('summary', { textContent: `${ROT[s]} (${its.length}) — não é pendência, clique para ver` }), lista))
-          continue
-        }
-        corpo.append(el('h3', { textContent: `${rot(s)} (${its.length})` }))
-        const tb = el('tbody')
-        for (const i of its) {
-          const ponto = i.ponto ? (i.ponto.status === 'batido' ? `entrada ${i.ponto.entrada1}` : i.ponto.status.replace('_', ' ')) : '—'
-          const previsto = i.horario ? `${i.horario.previsto} +${i.horario.toleranciaMin}min (${i.horario.origem})` : ''
-          tb.append(el('tr', {},
-            el('td', { textContent: i.celula || '—' }),
-            el('td', { textContent: i.adm || '—' }),
-            el('td', { textContent: i.nomePlanilha || i.nomePonto || '—' }),
-            el('td', { textContent: ponto }),
-            el('td', { textContent: previsto }),
-            el('td', { className: 'cod', textContent: i.valorAtual || '' }),
-            el('td', { className: 'cod', textContent: i.codigo || '' }),
-            el('td', { className: 'mot', textContent: i.motivo }),
-          ))
-        }
-        const head = el('tr')
-        for (const h of ['Célula', 'ADM', 'Colaborador', 'Ponto', 'Previsto', 'Atual', 'Bot', 'Motivo']) head.append(el('th', { textContent: h }))
-        corpo.append(el('table', {}, el('thead', {}, head), tb))
-      }
-      return box
-    }
+    // ── início ──
+    renderFrequencia(null)
+    atualizarStatus()
+    carregarAtividade()
+    $('cmd').focus()
   </script>
 </body>
 </html>

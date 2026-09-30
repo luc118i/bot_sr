@@ -26,11 +26,12 @@ function linhaItem(i: ItemPlano): string {
   return `  ${onde.padEnd(6)} ${adm.padEnd(9)} ${quem}${cod}${atual}\n           ${i.motivo}`
 }
 
-export type ModoRelatorio = 'simulacao' | 'escrita' | 'desfeita'
+export type ModoRelatorio = 'simulacao' | 'escrita' | 'justificativa' | 'desfeita'
 
 const TITULO_MODO: Record<ModoRelatorio, string> = {
   simulacao: 'SIMULAÇÃO (nada foi escrito)',
   escrita: 'ESCRITA',
+  justificativa: 'JUSTIFICATIVA (códigos escolhidos pelo operador)',
   desfeita: 'ESCRITA DESFEITA',
 }
 

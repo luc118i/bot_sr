@@ -9,7 +9,7 @@ import { validarData } from './planner'
 import { colunaA1, parseDataPlanilha, parseHora } from './tempo'
 import { normalize } from './normalize'
 import type { SheetGateway } from '../sheets/gateway'
-import { desfazerEscrita, executarEscrita, executarEscritaLote, preencherAutomatico, semanaDe, simular, simularLote } from '../service'
+import { desfazerEscrita, executarEscrita, executarEscritaLote, justificar, preencherAutomatico, semanaDe, simular, simularLote } from '../service'
 import { registrosDaApi } from './pontoApi'
 import { PontoAuthError } from '../ponto/secullum'
 import { carregarRegras, salvarRegras, validarRegras, type RegrasEditaveis } from '../regras'
@@ -378,6 +378,29 @@ test('desfazer apaga só o que o bot gravou e mantém o que alguém mudou depois
   assert.deepEqual(d2.apagadas, [])
 })
 
+test('justificar grava o código escolhido só em pendência vazia e pode ser desfeito', async () => {
+  const gw = cenario()
+  const plano = await simular(gw, { data: '2026-09-28', html: fs.readFileSync(FIXTURE, 'utf-8'), now: NOITE })
+  const rev = plano.itens.find(i => i.situacao === 'revisar' && i.celula)!
+  assert.ok(rev, 'o cenário precisa de alguém sem ponto')
+  const outra = plano.itens.find(i => i.situacao === 'escrever')!
+
+  // Célula fora das pendências e código fora da legenda são recusados sem gravar nada.
+  await assert.rejects(justificar(gw, plano, [{ celula: outra.celula!, codigo: 'AT' }]), /pendências/)
+  await assert.rejects(justificar(gw, plano, [{ celula: rev.celula!, codigo: 'XX' }]), /legenda/)
+
+  const r = await justificar(gw, plano, [{ celula: rev.celula!, codigo: 'at' }])
+  assert.deepEqual(r.escritas, [{ celula: rev.celula, codigo: 'AT' }])
+  assert.deepEqual(await gw.lerCelulas(plano.aba, [rev.celula!]), ['AT'])
+
+  // De novo: a célula já tem valor → pula, não sobrescreve.
+  const r2 = await justificar(gw, plano, [{ celula: rev.celula!, codigo: 'F' }])
+  assert.deepEqual(r2.puladas, [{ celula: rev.celula, valorEncontrado: 'AT' }])
+
+  const d = await desfazerEscrita(gw, plano.aba, r.escritas)
+  assert.deepEqual(d.apagadas, [rev.celula])
+})
+
 // ── feriados (colunas ocultas) e conferência da semana ─────────────────────
 
 test('feriado com coluna oculta não é preenchido nem com "forçar"', async () => {
@@ -611,4 +634,26 @@ test('regras: setores escolhidos são salvos no arquivo local e voltam ao abrir'
   regras.setores = ['Guará - Pisos', 'Distribuição']
   assert.deepEqual((await salvarRegras(regras, gw)).erros, [])
   assert.deepEqual((await carregarRegras(gw)).regras.setores, ['Guará - Pisos', 'Distribuição'])
+})
+
+// ── campo de comando da tela inicial ────────────────────────────────────────
+
+test('comando: frases em português viram ações do bot', () => {
+  const { interpretarComando: c } = require(path.resolve(__dirname, '..', '..', 'src', 'renderer', 'comando.js'))
+  const hoje = '2026-09-30' // quarta
+  assert.deepEqual(c('Preencher hoje', hoje), { acao: 'dia', data: '2026-09-30', simular: false })
+  assert.deepEqual(c('conferir semana de 21/09', hoje), { acao: 'semana', data: '2026-09-21', simular: false })
+  assert.deepEqual(c('Conferir semana', hoje), { acao: 'semana', data: '2026-09-30', simular: false })
+  assert.deepEqual(c('simular ontem', hoje), { acao: 'dia', data: '2026-09-29', simular: true })
+  assert.deepEqual(c('preencher segunda', hoje), { acao: 'dia', data: '2026-09-28', simular: false })
+  assert.deepEqual(c('semana passada sem gravar', hoje), { acao: 'semana', data: '2026-09-23', simular: true })
+  assert.deepEqual(c('28/09/2026', hoje), { acao: 'dia', data: '2026-09-28', simular: false })
+  assert.equal(c('Pendências de revisão', hoje).acao, 'pendencias')
+  assert.equal(c('ver histórico', hoje).acao, 'historico')
+  assert.equal(c('Gerar relatório', hoje).acao, 'relatorios')
+  assert.equal(c('mudar horário do Pedro', hoje).acao, 'regras')
+  assert.equal(c('testar login do ponto', hoje).acao, 'config')
+  assert.match(c('preencher 02/10', hoje).erro, /ainda não aconteceu/)
+  assert.match(c('preencher 31/09', hoje).erro, /não é uma data válida/)
+  assert.equal(c('qual a previsão do tempo', hoje).acao, 'ajuda')
 })

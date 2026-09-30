@@ -2,17 +2,17 @@ import './envSetup'
 import { app, Tray, Menu, nativeImage, dialog, shell, BrowserWindow, ipcMain, safeStorage } from 'electron'
 import path from 'path'
 import fs from 'fs'
-import { configurarCofre, credenciaisPonto, getConfig, getConfigPath, saveConfig, type AgentConfig } from './config'
+import { configurarCofre, credenciaisPonto, getConfig, getConfigPath, saveConfig, tipoConexao, type AgentConfig } from './config'
 import { hojeISO } from './core/tempo'
 import { SecullumClient } from './ponto/secullum'
 import { getLogsDir, getRelatoriosDir, logger } from './logger'
 import type { Plano } from './core/planner'
 import { extrairSpreadsheetId } from './sheets/googleSheets'
 import {
-  abrirGateway, desfazerEscrita, executarEscritaLote, gatewayDaConfig, preencherAutomatico, salvarRelatorio, semanaDe, simularLote,
+  abrirGateway, desfazerEscrita, executarEscritaLote, gatewayDaConfig, justificar, listarHistorico, preencherAutomatico, salvarRelatorio, semanaDe, simularLote,
   type EscritaDoDia, type Lote, type ResultadoDesfazer, type ResultadoEscrita,
 } from './service'
-import { carregarRegras, salvarRegras, type RegrasEditaveis } from './regras'
+import { carregarRegras, lerRegrasLocais, salvarRegras, type RegrasEditaveis } from './regras'
 import type { SheetGateway } from './sheets/gateway'
 
 let tray: Tray | null = null
@@ -29,6 +29,13 @@ const VALIDADE_PLANO_MS = 60 * 60 * 1000
 // escrita". Escritas mais antigas (ou de antes de reabrir o app) são desfeitas
 // pelo relatório .json de cada dia, salvo em relatorios/.
 let ultimaEscrita: EscritaDoDia[] | null = null
+
+// Planos do último resultado mostrado na tela (gravado ou simulado). A
+// justificativa só aceita células que estavam pendentes NESTES planos.
+let planosNaTela = new Map<string, Plano>()
+function mostrarNaTela(lote: Lote): void {
+  planosNaTela = new Map(lote.planos.map(p => [p.data, p]))
+}
 
 const gotLock = app.requestSingleInstanceLock()
 if (!gotLock) {
@@ -79,10 +86,13 @@ function ensureDir(d: string): string {
 function openConfigWindow(): void {
   if (configWin && !configWin.isDestroyed()) { configWin.focus(); return }
   configWin = new BrowserWindow({
-    width: 560,
-    height: 720,
+    width: 640,
+    height: 780,
+    minWidth: 520,
+    minHeight: 600,
+    backgroundColor: '#F4F4F2',
     resizable: true,
-    title: 'Frequência Agent — Configuração',
+    title: 'SR_dados — Configurações',
     autoHideMenuBar: true,
     webPreferences: { preload: preloadPath(), contextIsolation: true, nodeIntegration: false },
   })
@@ -93,22 +103,28 @@ function openConfigWindow(): void {
 function openAppWindow(): void {
   if (appWin && !appWin.isDestroyed()) { appWin.focus(); return }
   appWin = new BrowserWindow({
-    width: 1100,
-    height: 800,
-    title: 'Frequência Agent — Preencher frequência',
+    width: 1280,
+    height: 900,
+    minWidth: 720,
+    minHeight: 600,
+    backgroundColor: '#F4F4F2',
+    title: 'SR_dados',
     autoHideMenuBar: true,
     webPreferences: { preload: preloadPath(), contextIsolation: true, nodeIntegration: false },
   })
   appWin.loadFile(rendererPath('app.html'))
-  appWin.on('closed', () => { appWin = null; ultimoLote = null; ultimaEscrita = null })
+  appWin.on('closed', () => { appWin = null; ultimoLote = null; ultimaEscrita = null; planosNaTela = new Map() })
 }
 
 function openRegrasWindow(): void {
   if (regrasWin && !regrasWin.isDestroyed()) { regrasWin.focus(); return }
   regrasWin = new BrowserWindow({
-    width: 1000,
-    height: 780,
-    title: 'Frequência Agent — Horários e regras',
+    width: 1040,
+    height: 820,
+    minWidth: 720,
+    minHeight: 560,
+    backgroundColor: '#F4F4F2',
+    title: 'SR_dados — Horários e regras',
     autoHideMenuBar: true,
     webPreferences: { preload: preloadPath(), contextIsolation: true, nodeIntegration: false },
   })
@@ -153,6 +169,7 @@ function registerIPC(): void {
         forcar: !!params.forcar,
         onProgresso: ev => { if (!e.sender.isDestroyed()) e.sender.send('progresso', ev) },
       })
+      mostrarNaTela(r.lote)
       if (r.escrita) {
         for (const d of r.escrita.dias) salvarRelatorio(d.plano, 'escrita', { escritas: d.escritas, puladas: d.puladas })
         ultimaEscrita = r.escrita.dias.some(d => d.escritas.length) ? r.escrita.dias : null
@@ -218,6 +235,7 @@ function registerIPC(): void {
       const htmls = params.htmlPaths.map(p => ({ arquivo: path.basename(p), html: fs.readFileSync(p, 'utf-8') }))
       const lote = await simularLote(abrirGateway(), { htmls, forcar: !!params.forcar })
       ultimoLote = lote
+      mostrarNaTela(lote)
       for (const plano of lote.planos) salvarRelatorio(plano, 'simulacao')
       return { ok: true, lote }
     } catch (err: any) {
@@ -241,6 +259,22 @@ function registerIPC(): void {
       ok: !erro,
       message: erro,
       dias: dias.map(d => ({ data: d.data, aba: d.aba, escritas: d.escritas, puladas: d.puladas })),
+    }
+  })
+
+  // Justificar pendências (ex.: sem ponto → AT). Grava na hora, só em célula
+  // ainda vazia, e vira a "última escrita" — o Desfazer do aviso apaga de volta.
+  ipcMain.handle('justificar', async (_e, params: { data: string; itens: { celula: string; codigo: string }[] }) => {
+    const plano = planosNaTela.get(params.data)
+    if (!plano) return { ok: false, message: 'Esse dia não está mais na tela — confira o dia de novo antes de justificar.' }
+    try {
+      const r = await justificar(abrirGateway(), plano, params.itens)
+      salvarRelatorio(plano, 'justificativa', r)
+      if (r.escritas.length) ultimaEscrita = [{ data: plano.data, aba: plano.aba, plano, ...r }]
+      return { ok: true, ...r }
+    } catch (err: any) {
+      logger.error('[justificar]', err.message)
+      return { ok: false, message: err.message ?? 'Erro desconhecido' }
     }
   })
 
@@ -279,7 +313,7 @@ function registerIPC(): void {
     try {
       const alvos = result.filePaths.map(arq => {
         const { plano, extra } = JSON.parse(fs.readFileSync(arq, 'utf-8')) as { plano: Plano; extra?: ResultadoEscrita }
-        if (!/_escrita_/.test(path.basename(arq)) || !extra?.escritas) {
+        if (!/_(escrita|justificativa)_/.test(path.basename(arq)) || !extra?.escritas) {
           throw new Error(`"${path.basename(arq)}" não é o relatório de uma escrita (nome "..._escrita_....json").`)
         }
         return { plano, escritas: extra.escritas }
@@ -309,6 +343,21 @@ function registerIPC(): void {
   })
 
   ipcMain.handle('abrir-relatorios', () => shell.openPath(ensureDir(getRelatoriosDir())))
+
+  // Status do cabeçalho: o que já está configurado (sem ir à rede — é instantâneo).
+  ipcMain.handle('status-bot', () => {
+    let cfg: AgentConfig | null = null
+    try { cfg = getConfig() } catch { /* sem config ainda */ }
+    const planilha = !!cfg && (tipoConexao(cfg) === 'apps_script'
+      ? !!(cfg.apps_script_url && cfg.apps_script_token)
+      : !!(cfg.spreadsheet_id && cfg.google_service_account_json_b64))
+    const ponto = !!(cfg?.ponto_banco && cfg?.ponto_numero && cfg?.ponto_senha)
+    let regras = false
+    try { regras = !!lerRegrasLocais()?.geral.entrada_padrao } catch { /* arquivo ilegível */ }
+    return { planilha, ponto, regras }
+  })
+
+  ipcMain.handle('historico', () => listarHistorico(8))
 
   ipcMain.handle('abrir-regras', () => openRegrasWindow())
   ipcMain.handle('abrir-config', () => openConfigWindow())

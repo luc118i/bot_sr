@@ -3,6 +3,7 @@ import path from 'path'
 import { getConfig, tipoConexao, type AgentConfig } from './config'
 import { AppsScriptGateway } from './sheets/appsScriptGateway'
 import { getRelatoriosDir, logger } from './logger'
+import { parseCodigo } from './core/codigos'
 import type { OverridesGeral } from './core/configPlanilha'
 import { detectarLayout, nomeAbaDoMes } from './core/layoutMes'
 import { AntesDoCorteError, DiaNaoUtilError, montarPlano, type Plano } from './core/planner'
@@ -290,6 +291,31 @@ export async function executarEscrita(gw: SheetGateway, plano: Plano): Promise<R
   return { escritas, puladas }
 }
 
+// Justificativa: o operador decide o código de quem ficou pra revisão (sem
+// ponto → AT, FO, F...). Só vale para itens 'revisar' do plano (célula vazia na
+// hora da conferência) e segue a mesma regra da escrita: relê a célula e, se
+// alguém preencheu nesse meio tempo, pula. É aqui — decisão humana — que 'F' entra.
+export async function justificar(gw: SheetGateway, plano: Plano, pedidos: { celula: string; codigo: string }[]): Promise<ResultadoEscrita> {
+  const validos = pedidos.map(p => {
+    const codigo = parseCodigo(p.codigo)
+    if (!codigo) throw new Error(`Código "${p.codigo}" não está na legenda da planilha.`)
+    const item = plano.itens.find(i => i.celula === p.celula)
+    if (!item || item.situacao !== 'revisar') throw new Error(`A célula ${p.celula} não está entre as pendências de ${plano.data}.`)
+    return { celula: p.celula, codigo }
+  })
+  const atuais = await gw.lerCelulas(plano.aba, validos.map(v => v.celula))
+  const escritas: ResultadoEscrita['escritas'] = []
+  const puladas: ResultadoEscrita['puladas'] = []
+  validos.forEach((v, i) => {
+    const atual = atuais[i] ?? ''
+    if (atual.length > 0) puladas.push({ celula: v.celula, valorEncontrado: atual })
+    else escritas.push(v)
+  })
+  await gw.escrever(plano.aba, escritas.map(e => ({ celula: e.celula, valor: e.codigo })))
+  logger.info(`[justificar] ${plano.data} aba ${plano.aba}: ${escritas.map(e => `${e.celula}="${e.codigo}"`).join(', ') || 'nada'}; ${puladas.length} puladas`)
+  return { escritas, puladas }
+}
+
 export interface EscritaDoDia extends ResultadoEscrita { data: string; aba: string; plano: Plano }
 
 // Grava os dias em ordem. Se um falhar (rede, permissão), para ali e devolve os
@@ -349,10 +375,36 @@ export async function desfazerEscrita(gw: SheetGateway, aba: string, escritas: R
 }
 
 
+// "Atividade recente" da tela inicial: as últimas escritas e desfeitas, lidas
+// dos relatórios que o próprio bot salva (um .json por dia gravado/desfeito).
+export interface ItemHistorico { tipo: 'escrita' | 'justificativa' | 'desfeita'; data: string; aba: string; celulas: number; quando: string }
+
+export function listarHistorico(limite = 8): ItemHistorico[] {
+  const dir = getRelatoriosDir()
+  if (!fs.existsSync(dir)) return []
+  const arquivos = fs.readdirSync(dir)
+    .map(nome => ({ nome, m: /^(\d{4}-\d{2}-\d{2})_(escrita|justificativa|desfeita)_.*\.json$/.exec(nome) }))
+    .filter(a => a.m)
+    .map(a => ({ ...a, mtime: fs.statSync(path.join(dir, a.nome)).mtimeMs }))
+    .sort((x, y) => y.mtime - x.mtime)
+    .slice(0, limite)
+  const out: ItemHistorico[] = []
+  for (const a of arquivos) {
+    try {
+      const { plano, extra } = JSON.parse(fs.readFileSync(path.join(dir, a.nome), 'utf-8'))
+      const tipo = a.m![2] as ItemHistorico['tipo']
+      const celulas = tipo !== 'desfeita' ? (extra?.escritas?.length ?? 0) : (extra?.apagadas?.length ?? 0)
+      out.push({ tipo, data: a.m![1]!, aba: plano?.aba ?? '', celulas, quando: new Date(a.mtime).toISOString() })
+    } catch { /* relatório corrompido: ignora */ }
+  }
+  return out
+}
+
 export function salvarRelatorio(plano: Plano, modo: ModoRelatorio, extra?: ResultadoEscrita | ResultadoDesfazer): string {
   const dir = getRelatoriosDir()
   fs.mkdirSync(dir, { recursive: true })
-  const ts = plano.geradoEm.replace(/[:.]/g, '-')
+  // Justificativas do mesmo plano podem ser várias — cada uma no seu arquivo.
+  const ts = (modo === 'justificativa' ? new Date().toISOString() : plano.geradoEm).replace(/[:.]/g, '-')
   const base = path.join(dir, `${plano.data}_${modo}_${ts}`)
   fs.writeFileSync(`${base}.txt`, relatorioTexto(plano, modo) + resumoExtra(extra), 'utf-8')
   fs.writeFileSync(`${base}.json`, JSON.stringify({ plano, extra }, null, 2), 'utf-8')

@@ -31,3 +31,6 @@ Thumbs.db
 desktop.ini
 .vscode/
 .idea/
+
+# Configuração local do Claude Code (servidor de pré-visualização)
+.claude/

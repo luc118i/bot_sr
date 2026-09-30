@@ -3,140 +3,152 @@
 <head>
   <meta charset="UTF-8" />
   <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'" />
-  <title>Frequência Agent — Configuração</title>
+  <title>SR_dados — Configurações</title>
+  <link rel="stylesheet" href="sr.css" />
   <style>
-    * { box-sizing: border-box; margin: 0; padding: 0; }
-    body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: #f8fafc; color: #1e293b; font-size: 13px; }
-    .header { background: #1e293b; color: white; padding: 16px 24px; }
-    .header h1 { font-size: 15px; font-weight: 600; }
-    .header p { font-size: 11px; color: #94a3b8; margin-top: 2px; }
-    .content { padding: 20px 24px 80px; }
-    .section { margin-bottom: 20px; }
-    .section-title { font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.05em; color: #64748b; margin-bottom: 10px; padding-bottom: 6px; border-bottom: 1px solid #e2e8f0; }
-    .field { margin-bottom: 12px; }
-    .field label { display: block; font-size: 12px; font-weight: 500; color: #374151; margin-bottom: 4px; }
-    .field-hint { font-size: 11px; color: #94a3b8; margin-top: 3px; }
-    input[type="text"] { width: 100%; padding: 7px 10px; border: 1px solid #d1d5db; border-radius: 6px; font-size: 12px; background: white; }
-    .file-row { display: flex; gap: 8px; align-items: center; }
-    .file-name { flex: 1; padding: 7px 10px; border: 1px dashed #cbd5e1; border-radius: 6px; font-size: 12px; color: #64748b; background: white; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-    button { padding: 7px 14px; border-radius: 6px; font-size: 12px; font-weight: 500; cursor: pointer; border: 1px solid #d1d5db; background: white; color: #1e293b; }
-    button.primary { background: #1e293b; color: white; border-color: #1e293b; }
-    button:disabled { opacity: .5; cursor: default; }
-    .actions { display: flex; gap: 8px; justify-content: flex-end; padding: 14px 24px; border-top: 1px solid #e2e8f0; background: white; position: fixed; bottom: 0; left: 0; right: 0; }
-    .msg { margin-top: 10px; padding: 8px 10px; border-radius: 6px; font-size: 12px; display: none; white-space: pre-wrap; }
-    .msg.ok { display: block; background: #dcfce7; color: #166534; }
-    .msg.err { display: block; background: #fee2e2; color: #991b1b; }
-    code { background: #e2e8f0; padding: 1px 4px; border-radius: 3px; font-size: 11px; }
-    .tabs { display: flex; gap: 4px; padding: 10px 24px 0; background: white; border-bottom: 1px solid #e2e8f0; }
-    .tab { border: none; border-bottom: 2px solid transparent; border-radius: 0; background: none; padding: 8px 12px; color: #64748b; }
-    .tab.ativa { color: #1e293b; border-bottom-color: #1e293b; font-weight: 600; }
-    select { width: 100%; padding: 7px 10px; border: 1px solid #d1d5db; border-radius: 6px; font-size: 12px; background: white; }
-    .radios { display: flex; gap: 18px; margin-bottom: 12px; font-size: 12px; }
-    .radios label { display: flex; gap: 5px; align-items: center; cursor: pointer; }
+    main { max-width: 640px; margin: 0 auto; padding: 24px 28px 96px; display: flex; flex-direction: column; gap: 20px; }
+    .titulo h1 { font-size: 24px; font-weight: 600; letter-spacing: -.02em; }
+    .titulo p { font-size: 14px; color: var(--texto-2); margin-top: 4px; }
+    .cartao { display: flex; flex-direction: column; gap: 16px; }
+    .linha { display: flex; gap: 8px; align-items: center; }
+    .linha > input { flex-grow: 1; }
+    .opcao { display: flex; gap: 10px; align-items: flex-start; padding: 12px 14px; border: 1px solid var(--borda); border-radius: 12px; cursor: pointer; transition: border-color .15s, background .15s; flex: 1; }
+    .opcao:hover { background: var(--superficie-2); }
+    .opcao:has(input:checked) { border-color: var(--acao); background: #F5F8FF; }
+    .opcao b { display: block; font-size: 14px; font-weight: 600; }
+    .opcao span { font-size: 12px; color: var(--texto-3); }
+    .opcao input { margin-top: 2px; }
+    .arquivo { flex-grow: 1; height: 40px; display: flex; align-items: center; padding: 0 12px; border: 1px dashed #CBD5E1; border-radius: 10px; color: var(--texto-3); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    code { font-family: var(--mono); font-size: 12px; background: var(--realce); padding: 1px 6px; border-radius: 6px; }
+    .testar { display: flex; flex-direction: column; gap: 10px; }
+    .testar .alerta { animation: entrar .2s ease-out both; }
   </style>
 </head>
 <body>
-  <div class="header">
-    <h1>Frequência Agent — Configuração</h1>
-    <p>Conexão com a planilha e login do ponto. As regras (horários, tolerância, exceções) ficam em "Horários e regras".</p>
-  </div>
-
-  <div class="tabs">
-    <button class="tab ativa" data-tab="planilha">Planilha</button>
-    <button class="tab" data-tab="ponto">Ponto (Secullum)</button>
-  </div>
-
-  <div class="content" id="tab-ponto" style="display:none">
-    <div class="section">
-      <div class="section-title">Login da Central do Funcionário</div>
-      <p class="field-hint" style="margin:0 0 12px">Os mesmos dados da tela de login do ponto. O bot usa esse login para ler o acompanhamento de ponto da equipe — nada é alterado no ponto. A senha fica criptografada nesta máquina.</p>
-      <div class="field">
-        <label>Banco</label>
-        <input type="text" id="pontoBanco" inputmode="numeric" placeholder="número do banco (o mesmo do login)" />
-      </div>
-      <div class="field">
-        <label>Entrar com</label>
-        <select id="pontoTipo">
-          <option value="folha">Nº Folha</option>
-          <option value="identificador">Nº Identificador</option>
-        </select>
-      </div>
-      <div class="field">
-        <label>Número</label>
-        <input type="text" id="pontoNumero" autocomplete="off" />
-      </div>
-      <div class="field">
-        <label>Senha</label>
-        <div class="file-row">
-          <input type="password" id="pontoSenha" autocomplete="off" />
-          <button id="btnVerSenha" style="white-space:nowrap">Mostrar</button>
-        </div>
-      </div>
-      <button id="btnTestarPonto">Testar login</button>
-      <div class="msg" id="msgPonto"></div>
+  <header class="topo">
+    <div class="marca">
+      <span class="logo"><svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="#fff" stroke-width="1.6" stroke-linecap="round"><path d="M3 5h10M3 8h6M3 11h8"/></svg></span>
+      Configurações
     </div>
-  </div>
+    <div class="segmentos" role="tablist" aria-label="Seções">
+      <button class="aba" role="tab" aria-selected="true" data-tab="planilha">Planilha</button>
+      <button class="aba" role="tab" aria-selected="false" data-tab="ponto">Ponto</button>
+    </div>
+  </header>
 
-  <div class="content" id="tab-planilha">
-    <div class="section">
-      <div class="section-title">Conexão com a planilha</div>
-      <div class="radios">
-        <label><input type="radio" name="conexao" value="apps_script" checked /> Apps Script (link da planilha)</label>
-        <label><input type="radio" name="conexao" value="service_account" /> Service Account (JSON)</label>
+  <main>
+    <div id="tab-planilha" style="display:flex;flex-direction:column;gap:20px">
+      <div class="titulo">
+        <h1>Conexão com a planilha</h1>
+        <p>Na planilha o bot só lê as abas e preenche as células dos dias. Horários e regras ficam nesta máquina.</p>
       </div>
 
-      <div id="boxAppsScript">
-        <div class="field">
-          <label>Link do App da Web</label>
-          <input type="text" id="asUrl" placeholder="https://script.google.com/macros/s/.../exec" />
-          <div class="field-hint">Apps Script → Implantar → Nova implantação → App da Web (executar como: Eu · acesso: Qualquer pessoa). Passo a passo no README.</div>
+      <section class="cartao">
+        <div style="display:flex;gap:10px">
+          <label class="opcao"><input type="radio" name="conexao" value="apps_script" checked /><div><b>Apps Script</b><span>Link da planilha + token. Não precisa de Google Cloud.</span></div></label>
+          <label class="opcao"><input type="radio" name="conexao" value="service_account" /><div><b>Service Account</b><span>Arquivo JSON do Google Cloud.</span></div></label>
         </div>
-        <div class="field">
-          <label>Token</label>
-          <div class="file-row">
-            <input type="text" id="asToken" placeholder="gere um e cole na propriedade TOKEN do script" />
-            <button id="btnToken" style="white-space:nowrap">Gerar token</button>
+
+        <div id="boxAppsScript" style="display:flex;flex-direction:column;gap:16px">
+          <label class="campo">
+            <span>Link do App da Web</span>
+            <input type="text" id="asUrl" placeholder="https://script.google.com/macros/s/…/exec" />
+            <span class="ajuda">Apps Script → Implantar → App da Web (executar como: Eu · acesso: Qualquer pessoa).</span>
+          </label>
+          <div class="campo">
+            <label class="rotulo" for="asToken">Token</label>
+            <div class="linha">
+              <input type="text" id="asToken" placeholder="gere e cole na propriedade TOKEN do script" />
+              <button class="btn" id="btnToken">Gerar token</button>
+            </div>
+            <span class="ajuda">Cole o mesmo valor em Apps Script → Configurações do projeto → Propriedades do script → <code>TOKEN</code>. Fica criptografado nesta máquina.</span>
           </div>
-          <div class="field-hint">Cole o mesmo valor em Apps Script → Configurações do projeto → Propriedades do script → <code>TOKEN</code>.</div>
         </div>
-      </div>
 
-      <div id="boxServiceAccount" style="display:none">
-        <div class="field">
-          <label>Service Account (JSON)</label>
-          <div class="file-row">
-            <div class="file-name" id="saName">Nenhum arquivo selecionado</div>
-            <button id="btnPick">Selecionar...</button>
+        <div id="boxServiceAccount" style="display:none;flex-direction:column;gap:16px">
+          <div class="campo">
+            <span class="rotulo">Service Account (JSON)</span>
+            <div class="linha">
+              <div class="arquivo" id="saName">Nenhum arquivo selecionado</div>
+              <button class="btn" id="btnPick">Selecionar…</button>
+            </div>
+            <span class="ajuda" id="saHint">A planilha precisa estar compartilhada como Editor com o e-mail da Service Account.</span>
           </div>
-          <div class="field-hint" id="saHint">A planilha precisa estar compartilhada como <b>Editor</b> com o e-mail da Service Account.</div>
+          <label class="campo">
+            <span>Planilha de frequência (link ou ID)</span>
+            <input type="text" id="sheetId" placeholder="https://docs.google.com/spreadsheets/d/…" />
+          </label>
         </div>
-        <div class="field">
-          <label>Planilha de frequência (link ou ID)</label>
-          <input type="text" id="sheetId" placeholder="https://docs.google.com/spreadsheets/d/..." />
-        </div>
-      </div>
 
-      <button id="btnTest">Testar conexão</button>
-      <div class="msg" id="msg"></div>
+        <div class="testar">
+          <div><button class="btn" id="btnTest">Testar conexão</button></div>
+          <div id="msg"></div>
+        </div>
+      </section>
     </div>
 
-    <p class="field-hint" style="margin-top:4px">
-      Na planilha o bot só lê as abas e preenche as células dos dias. Horários, tolerância,
-      exceções e apelidos ficam salvos nesta máquina (Horários e regras).
-    </p>
-  </div>
+    <div id="tab-ponto" style="display:none;flex-direction:column;gap:20px">
+      <div class="titulo">
+        <h1>Login do ponto</h1>
+        <p>Os mesmos dados da tela de login da Central do Funcionário. O bot só lê o acompanhamento de ponto — nada é alterado no ponto.</p>
+      </div>
+      <section class="cartao">
+        <div style="display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:16px">
+          <label class="campo">
+            <span>Banco</span>
+            <input type="text" id="pontoBanco" inputmode="numeric" placeholder="número do banco" />
+          </label>
+          <label class="campo">
+            <span>Entrar com</span>
+            <select id="pontoTipo">
+              <option value="folha">Nº Folha</option>
+              <option value="identificador">Nº Identificador</option>
+            </select>
+          </label>
+        </div>
+        <label class="campo">
+          <span>Número</span>
+          <input type="text" id="pontoNumero" autocomplete="off" />
+        </label>
+        <div class="campo">
+          <label class="rotulo" for="pontoSenha">Senha</label>
+          <div class="linha">
+            <input type="password" id="pontoSenha" autocomplete="off" />
+            <button class="btn" id="btnVerSenha">Mostrar</button>
+          </div>
+          <span class="ajuda">Fica criptografada nesta máquina (cofre do Windows).</span>
+        </div>
+        <div class="testar">
+          <div><button class="btn" id="btnTestarPonto">Testar login</button></div>
+          <div id="msgPonto"></div>
+        </div>
+      </section>
+    </div>
+  </main>
 
-  <div class="actions">
-    <button class="primary" id="btnSave">Salvar</button>
+  <div class="rodape">
+    <span class="estado" id="estado"></span>
+    <button class="btn fantasma" id="btnFechar">Fechar</button>
+    <button class="btn primario" id="btnSave">Salvar</button>
   </div>
 
   <script>
     let sa = ''
     let cfgSalva = {}
     const $ = id => document.getElementById(id)
-    const show = (el, ok, text) => { el.className = 'msg ' + (ok ? 'ok' : 'err'); el.textContent = text }
+    const GIRA = '<svg class="spin" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#2451D6" stroke-width="2.4" stroke-linecap="round"><path d="M21 12a9 9 0 1 1-6.2-8.6"/></svg>'
+    function show(alvo, tipo, titulo, texto) {
+      const box = document.createElement('div')
+      box.className = 'alerta ' + tipo
+      const ponto = document.createElement('span'); ponto.className = 'ponto'
+      const corpo = document.createElement('div')
+      const b = document.createElement('b'); b.textContent = titulo
+      const t = document.createElement('span'); t.textContent = texto || ''
+      corpo.append(b, t); box.append(ponto, corpo)
+      alvo.replaceChildren(box)
+    }
     const conexao = () => document.querySelector('input[name="conexao"]:checked').value
-    // Mantém campos que esta tela não edita (ex.: credenciais do ponto).
+    // Mantém campos que esta tela não edita.
     const current = () => ({
       ...cfgSalva,
       conexao: conexao(),
@@ -150,11 +162,16 @@
       ponto_senha: $('pontoSenha').value,
     })
 
-    document.querySelectorAll('.tab').forEach(t => {
+    let mudou = false
+    const marcar = () => { mudou = true; $('estado').textContent = 'Alterações não salvas' }
+    document.addEventListener('input', marcar)
+    document.addEventListener('change', marcar)
+
+    document.querySelectorAll('.aba').forEach(t => {
       t.onclick = () => {
-        document.querySelectorAll('.tab').forEach(x => x.classList.toggle('ativa', x === t))
-        $('tab-planilha').style.display = t.dataset.tab === 'planilha' ? '' : 'none'
-        $('tab-ponto').style.display = t.dataset.tab === 'ponto' ? '' : 'none'
+        document.querySelectorAll('.aba').forEach(x => x.setAttribute('aria-selected', String(x === t)))
+        $('tab-planilha').style.display = t.dataset.tab === 'planilha' ? 'flex' : 'none'
+        $('tab-ponto').style.display = t.dataset.tab === 'ponto' ? 'flex' : 'none'
       }
     })
 
@@ -164,17 +181,21 @@
       $('btnVerSenha').textContent = i.type === 'password' ? 'Mostrar' : 'Ocultar'
     }
 
-    $('btnTestarPonto').onclick = async () => {
-      $('btnTestarPonto').disabled = true
-      show($('msgPonto'), true, 'Testando...')
-      const r = await window.agent.testarPonto(current())
-      show($('msgPonto'), r.ok, r.message)
-      $('btnTestarPonto').disabled = false
+    async function testar(botao, alvo, fn, okTitulo) {
+      botao.disabled = true
+      const rotulo = botao.textContent
+      botao.innerHTML = GIRA + ' Testando…'
+      const r = await fn(current())
+      show(alvo, r.ok ? 'ok' : 'erro', r.ok ? okTitulo : 'Não funcionou', r.message)
+      botao.disabled = false
+      botao.textContent = rotulo
     }
+    $('btnTestarPonto').onclick = () => testar($('btnTestarPonto'), $('msgPonto'), window.agent.testarPonto, 'Login ok')
+    $('btnTest').onclick = () => testar($('btnTest'), $('msg'), window.agent.testConnection, 'Conectado')
 
     function mostrarConexao() {
-      $('boxAppsScript').style.display = conexao() === 'apps_script' ? '' : 'none'
-      $('boxServiceAccount').style.display = conexao() === 'service_account' ? '' : 'none'
+      $('boxAppsScript').style.display = conexao() === 'apps_script' ? 'flex' : 'none'
+      $('boxServiceAccount').style.display = conexao() === 'service_account' ? 'flex' : 'none'
     }
     document.querySelectorAll('input[name="conexao"]').forEach(r => { r.onchange = mostrarConexao })
 
@@ -183,6 +204,7 @@
       const b = new Uint8Array(24)
       crypto.getRandomValues(b)
       $('asToken').value = [...b].map(x => x.toString(16).padStart(2, '0')).join('')
+      marcar()
     }
 
     window.agent.getConfig().then(cfg => {
@@ -202,6 +224,8 @@
       if (sa) {
         try { $('saName').textContent = 'Configurada — ' + JSON.parse(atob(sa)).client_email } catch { $('saName').textContent = 'Configurada' }
       }
+      mudou = false
+      $('estado').textContent = ''
     })
 
     $('btnPick').onclick = async () => {
@@ -209,21 +233,23 @@
       if (!r) return
       sa = r.b64
       $('saName').textContent = r.name + (r.email ? ' — ' + r.email : '')
-    }
-
-    $('btnTest').onclick = async () => {
-      $('btnTest').disabled = true
-      const r = await window.agent.testConnection(current())
-      show($('msg'), r.ok, r.message)
-      $('btnTest').disabled = false
+      marcar()
     }
 
     $('btnSave').onclick = async () => {
       await window.agent.saveConfig(current())
+      cfgSalva = current()
+      mudou = false
+      $('estado').textContent = ''
       const naAbaPonto = $('tab-ponto').style.display !== 'none'
-      show($(naAbaPonto ? 'msgPonto' : 'msg'), true, 'Configuração salva.')
+      show($(naAbaPonto ? 'msgPonto' : 'msg'), 'ok', 'Salvo', 'Configuração salva nesta máquina.')
     }
 
+    $('btnFechar').onclick = () => {
+      if (mudou && !confirm('Fechar sem salvar as alterações?')) return
+      mudou = false
+      window.close()
+    }
   </script>
 </body>
 </html>
