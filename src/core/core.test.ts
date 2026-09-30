@@ -5,11 +5,14 @@ import path from 'path'
 import { parsePontoHtml } from './pontoParser'
 import { detectarLayout, LayoutInvalidoError, nomeAbaDoMes } from './layoutMes'
 import { parseConfigPlanilha, resolverHorario } from './configPlanilha'
-import { validarData } from './planner'
+import { contarPendencias, validarData } from './planner'
 import { colunaA1, parseDataPlanilha, parseHora } from './tempo'
 import { normalize } from './normalize'
 import type { SheetGateway } from '../sheets/gateway'
-import { desfazerEscrita, executarEscrita, executarEscritaLote, justificar, preencherAutomatico, semanaDe, simular, simularLote } from '../service'
+import {
+  desfazerEscrita, executarEscrita, executarEscritaLote, justificar, lerConferencias, lerUltimoResultado, preencherAutomatico, registrarConferencias,
+  registrarFeriados, reverterJustificativas, salvarUltimoResultado, semanaDe, simular, simularLote,
+} from '../service'
 import { registrosDaApi } from './pontoApi'
 import { PontoAuthError } from '../ponto/secullum'
 import { carregarRegras, salvarRegras, validarRegras, type RegrasEditaveis } from '../regras'
@@ -389,16 +392,50 @@ test('justificar grava o código escolhido só em pendência vazia e pode ser de
   await assert.rejects(justificar(gw, plano, [{ celula: outra.celula!, codigo: 'AT' }]), /pendências/)
   await assert.rejects(justificar(gw, plano, [{ celula: rev.celula!, codigo: 'XX' }]), /legenda/)
 
+  const antiga = structuredClone(plano)
   const r = await justificar(gw, plano, [{ celula: rev.celula!, codigo: 'at' }])
   assert.deepEqual(r.escritas, [{ celula: rev.celula, codigo: 'AT' }])
   assert.deepEqual(await gw.lerCelulas(plano.aba, [rev.celula!]), ['AT'])
 
-  // De novo: a célula já tem valor → pula, não sobrescreve.
-  const r2 = await justificar(gw, plano, [{ celula: rev.celula!, codigo: 'F' }])
+  // Outra tela com a conferência antiga (a célula ainda aparece vazia): pula, não sobrescreve.
+  const r2 = await justificar(gw, antiga, [{ celula: rev.celula!, codigo: 'F' }])
   assert.deepEqual(r2.puladas, [{ celula: rev.celula, valorEncontrado: 'AT' }])
+
+  // O plano passou a refletir a planilha — é ele que fica salvo como "último resultado".
+  assert.equal(rev.situacao, 'justificado')
+  assert.equal(plano.resumo.justificado, 1)
 
   const d = await desfazerEscrita(gw, plano.aba, r.escritas)
   assert.deepEqual(d.apagadas, [rev.celula])
+  assert.ok(reverterJustificativas(plano, d.apagadas))
+  assert.equal(rev.situacao, 'revisar')
+  assert.equal(plano.resumo.justificado, 0)
+})
+
+test('memória: registra o dia conferido com pendências e feriado como resolvido', async () => {
+  const dir = fs.mkdtempSync(path.join(require('os').tmpdir(), 'freq-dados-'))
+  const antes = process.env['DATA_DIR']
+  process.env['DATA_DIR'] = dir
+  try {
+    const gw = cenario()
+    const plano = await simular(gw, { data: '2026-09-28', html: fs.readFileSync(FIXTURE, 'utf-8'), now: NOITE })
+    const hoje = new Date()
+    const recente = (dia: number) => { const d = new Date(hoje); d.setDate(d.getDate() - dia); return d.toISOString().slice(0, 10) }
+    // A limpeza guarda ~100 dias: usa datas recentes pra não cair no corte.
+    plano.data = recente(1)
+    registrarConferencias([plano], '2026-09-30T16:00:00.000Z')
+    registrarFeriados([{ data: recente(2), arquivo: 'ponto', motivo: 'coluna oculta (feriado)' }, { data: recente(3), arquivo: 'ponto', motivo: 'Ainda são 10:00' }], '2026-09-30T16:00:00.000Z')
+    const c = lerConferencias()
+    assert.equal(c[recente(1)]!.pendencias, contarPendencias(plano))
+    assert.equal(c[recente(1)]!.pendentes.length, contarPendencias(plano))
+    assert.ok(c[recente(2)]!.feriado)
+    assert.equal(c[recente(3)], undefined) // antes do corte não conta como conferido
+
+    salvarUltimoResultado({ quando: 'x', modo: 'gravado', lote: { geradoEm: '', planos: [plano], pulados: [], erros: [] }, gravadas: 3 })
+    assert.equal(lerUltimoResultado()!.lote.planos[0]!.data, plano.data)
+  } finally {
+    if (antes === undefined) delete process.env['DATA_DIR']; else process.env['DATA_DIR'] = antes
+  }
 })
 
 // ── feriados (colunas ocultas) e conferência da semana ─────────────────────

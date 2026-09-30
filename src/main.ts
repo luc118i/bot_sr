@@ -9,7 +9,8 @@ import { getLogsDir, getRelatoriosDir, logger } from './logger'
 import type { Plano } from './core/planner'
 import { extrairSpreadsheetId } from './sheets/googleSheets'
 import {
-  abrirGateway, desfazerEscrita, executarEscritaLote, gatewayDaConfig, justificar, listarHistorico, preencherAutomatico, salvarRelatorio, semanaDe, simularLote,
+  abrirGateway, desfazerEscrita, executarEscritaLote, gatewayDaConfig, justificar, lerConferencias, lerUltimoResultado, listarHistorico, preencherAutomatico,
+  registrarConferencias, registrarFeriados, reverterJustificativas, salvarRelatorio, salvarUltimoResultado, semanaDe, simularLote,
   type EscritaDoDia, type Lote, type ResultadoDesfazer, type ResultadoEscrita,
 } from './service'
 import { carregarRegras, lerRegrasLocais, salvarRegras, type RegrasEditaveis } from './regras'
@@ -33,8 +34,35 @@ let ultimaEscrita: EscritaDoDia[] | null = null
 // Planos do último resultado mostrado na tela (gravado ou simulado). A
 // justificativa só aceita células que estavam pendentes NESTES planos.
 let planosNaTela = new Map<string, Plano>()
-function mostrarNaTela(lote: Lote): void {
+let loteNaTela: Lote | null = null
+let modoNaTela: 'gravado' | 'simulacao' = 'simulacao'
+let gravadasNaTela = 0
+function mostrarNaTela(lote: Lote, modo: 'gravado' | 'simulacao', gravadas = 0, quando = new Date().toISOString()): void {
+  loteNaTela = lote
+  modoNaTela = modo
+  gravadasNaTela = gravadas
   planosNaTela = new Map(lote.planos.map(p => [p.data, p]))
+  salvarUltimoResultado({ quando, modo, lote, gravadas })
+}
+// Justificar/desfazer mudam os planos já na tela: regrava o último resultado e,
+// se o dia já estava registrado como conferido, atualiza as pendências dele.
+function planosMudaram(planos: Plano[]): void {
+  if (!loteNaTela) return
+  const ultimo = lerUltimoResultado()
+  salvarUltimoResultado({ quando: ultimo?.quando ?? new Date().toISOString(), modo: modoNaTela, lote: loteNaTela, gravadas: gravadasNaTela })
+  const conferidos = lerConferencias()
+  registrarConferencias(planos.filter(p => conferidos[p.data]))
+}
+// Dias que a gravação de fato concluiu (se parou no meio, só os anteriores à falha).
+function registrarGravacao(lote: Lote, escrita: { dias: EscritaDoDia[]; erro: string | null }): number {
+  const planos = lote.planos
+  const quando = new Date().toISOString()
+  registrarFeriados(lote.pulados, quando)
+  const gravados = new Set(escrita.dias.map(d => d.data))
+  const falhou = escrita.erro ? planos.find(p => p.escritas.length && !gravados.has(p.data))?.data : undefined
+  const ok = falhou ? planos.filter(p => p.data < falhou) : planos
+  registrarConferencias(ok, quando)
+  return escrita.dias.reduce((n, d) => n + d.escritas.length, 0)
 }
 
 const gotLock = app.requestSingleInstanceLock()
@@ -113,7 +141,7 @@ function openAppWindow(): void {
     webPreferences: { preload: preloadPath(), contextIsolation: true, nodeIntegration: false },
   })
   appWin.loadFile(rendererPath('app.html'))
-  appWin.on('closed', () => { appWin = null; ultimoLote = null; ultimaEscrita = null; planosNaTela = new Map() })
+  appWin.on('closed', () => { appWin = null; ultimoLote = null; ultimaEscrita = null; planosNaTela = new Map(); loteNaTela = null })
 }
 
 function openRegrasWindow(): void {
@@ -169,12 +197,13 @@ function registerIPC(): void {
         forcar: !!params.forcar,
         onProgresso: ev => { if (!e.sender.isDestroyed()) e.sender.send('progresso', ev) },
       })
-      mostrarNaTela(r.lote)
       if (r.escrita) {
+        mostrarNaTela(r.lote, 'gravado', registrarGravacao(r.lote, r.escrita))
         for (const d of r.escrita.dias) salvarRelatorio(d.plano, 'escrita', { escritas: d.escritas, puladas: d.puladas })
         ultimaEscrita = r.escrita.dias.some(d => d.escritas.length) ? r.escrita.dias : null
       } else {
         for (const plano of r.lote.planos) salvarRelatorio(plano, 'simulacao')
+        mostrarNaTela(r.lote, 'simulacao')
         ultimoLote = r.lote
       }
       return {
@@ -235,7 +264,7 @@ function registerIPC(): void {
       const htmls = params.htmlPaths.map(p => ({ arquivo: path.basename(p), html: fs.readFileSync(p, 'utf-8') }))
       const lote = await simularLote(abrirGateway(), { htmls, forcar: !!params.forcar })
       ultimoLote = lote
-      mostrarNaTela(lote)
+      mostrarNaTela(lote, 'simulacao')
       for (const plano of lote.planos) salvarRelatorio(plano, 'simulacao')
       return { ok: true, lote }
     } catch (err: any) {
@@ -253,6 +282,7 @@ function registerIPC(): void {
     ultimoLote = null // uma simulação só é aplicada uma vez
     const { dias, erro } = await executarEscritaLote(abrirGateway(), lote.planos)
     for (const d of dias) salvarRelatorio(d.plano, 'escrita', { escritas: d.escritas, puladas: d.puladas })
+    mostrarNaTela(lote, 'gravado', registrarGravacao(lote, { dias, erro }))
     // Mesmo com erro no meio, os dias já gravados ficam disponíveis pro Desfazer.
     ultimaEscrita = dias.some(d => d.escritas.length) ? dias : null
     return {
@@ -270,6 +300,7 @@ function registerIPC(): void {
     try {
       const r = await justificar(abrirGateway(), plano, params.itens)
       salvarRelatorio(plano, 'justificativa', r)
+      planosMudaram([plano])
       if (r.escritas.length) ultimaEscrita = [{ data: plano.data, aba: plano.aba, plano, ...r }]
       return { ok: true, ...r }
     } catch (err: any) {
@@ -288,6 +319,8 @@ function registerIPC(): void {
         const r = await desfazerEscrita(gw, d.aba, d.escritas)
         salvarRelatorio(d.plano, 'desfeita', r)
         dias.push({ data: d.data, aba: d.aba, ...r })
+        const naTela = planosNaTela.get(d.data)
+        if (naTela && reverterJustificativas(naTela, r.apagadas)) planosMudaram([naTela])
       }
       ultimaEscrita = null
       return { ok: true, dias }
@@ -358,6 +391,23 @@ function registerIPC(): void {
   })
 
   ipcMain.handle('historico', () => listarHistorico(8))
+
+  // Ao abrir a tela: o último resultado (volta pra tela, e as pendências dele
+  // podem ser justificadas) e os dias já conferidos.
+  ipcMain.handle('estado-inicial', () => {
+    let ultimo = loteNaTela ? lerUltimoResultado() : null
+    if (!loteNaTela) {
+      ultimo = lerUltimoResultado()
+      if (ultimo) {
+        loteNaTela = ultimo.lote
+        modoNaTela = ultimo.modo
+        gravadasNaTela = ultimo.gravadas
+        planosNaTela = new Map(ultimo.lote.planos.map(p => [p.data, p]))
+      }
+    }
+    return { ultimo, conferencias: lerConferencias() }
+  })
+  ipcMain.handle('conferencias', () => lerConferencias())
 
   ipcMain.handle('abrir-regras', () => openRegrasWindow())
   ipcMain.handle('abrir-config', () => openConfigWindow())

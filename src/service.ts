@@ -2,11 +2,11 @@ import fs from 'fs'
 import path from 'path'
 import { getConfig, tipoConexao, type AgentConfig } from './config'
 import { AppsScriptGateway } from './sheets/appsScriptGateway'
-import { getRelatoriosDir, logger } from './logger'
-import { parseCodigo } from './core/codigos'
+import { getDataDir, getRelatoriosDir, logger } from './logger'
+import { CODIGOS, parseCodigo, type Codigo } from './core/codigos'
 import type { OverridesGeral } from './core/configPlanilha'
 import { detectarLayout, nomeAbaDoMes } from './core/layoutMes'
-import { AntesDoCorteError, DiaNaoUtilError, montarPlano, type Plano } from './core/planner'
+import { AntesDoCorteError, DiaNaoUtilError, SITUACOES_PENDENTES, contarPendencias, montarPlano, recontarResumo, type Plano } from './core/planner'
 import { pontoDizFeriado, registrosDaApi } from './core/pontoApi'
 import { parsePontoHtml, type PontoRegistro } from './core/pontoParser'
 import { relatorioTexto, type ModoRelatorio } from './core/relatorio'
@@ -184,9 +184,9 @@ export async function preencherAutomatico(gw: SheetGateway, ponto: FontePonto, o
 }
 
 function resumoDia(p: Plano): string {
-  const partes = [`${p.escritas.length} a preencher`]
-  if (p.resumo.revisar) partes.push(`${p.resumo.revisar} p/ revisão`)
-  if (p.resumo.divergente) partes.push(`${p.resumo.divergente} diverge(m)`)
+  const partes = [p.escritas.length ? `${p.escritas.length} a preencher` : 'nada a preencher']
+  const pend = contarPendencias(p)
+  if (pend) partes.push(`${pend} p/ revisão`)
   if (p.resumo.confere) partes.push(`${p.resumo.confere} já conferem`)
   return partes.join(', ')
 }
@@ -312,8 +312,28 @@ export async function justificar(gw: SheetGateway, plano: Plano, pedidos: { celu
     else escritas.push(v)
   })
   await gw.escrever(plano.aba, escritas.map(e => ({ celula: e.celula, valor: e.codigo })))
+  // O plano passa a refletir a planilha (é ele que fica salvo como "último resultado").
+  for (const e of escritas) {
+    const i = plano.itens.find(i => i.celula === e.celula)!
+    i.antes = { situacao: i.situacao, motivo: i.motivo }
+    Object.assign(i, { situacao: 'justificado', codigo: e.codigo, valorAtual: e.codigo, motivo: `Justificado por você: ${e.codigo} · ${CODIGOS[e.codigo as Codigo]}` })
+  }
+  recontarResumo(plano)
   logger.info(`[justificar] ${plano.data} aba ${plano.aba}: ${escritas.map(e => `${e.celula}="${e.codigo}"`).join(', ') || 'nada'}; ${puladas.length} puladas`)
   return { escritas, puladas }
+}
+
+// Depois de um Desfazer: o que tinha sido justificado e foi apagado volta a ser pendência.
+export function reverterJustificativas(plano: Plano, apagadas: string[]): boolean {
+  let mudou = false
+  for (const i of plano.itens) {
+    if (i.situacao !== 'justificado' || !i.antes || !apagadas.includes(i.celula ?? '')) continue
+    Object.assign(i, { situacao: i.antes.situacao, motivo: i.antes.motivo, codigo: null, valorAtual: '' })
+    delete i.antes
+    mudou = true
+  }
+  if (mudou) recontarResumo(plano)
+  return mudou
 }
 
 export interface EscritaDoDia extends ResultadoEscrita { data: string; aba: string; plano: Plano }
@@ -326,15 +346,16 @@ export async function executarEscritaLote(gw: SheetGateway, planos: Plano[], pro
   for (let i = 0; i < planos.length; i++) {
     const plano = planos[i]!
     if (!plano.escritas.length) {
-      prog({ tipo: 'dia', data: plano.data, fase: 'pronto', detalhe: `Nada a preencher — ${resumoDia(plano)}` })
+      prog({ tipo: 'dia', data: plano.data, fase: 'pronto', detalhe: resumoDia(plano) })
       continue
     }
     prog({ tipo: 'dia', data: plano.data, fase: 'gravar', detalhe: `Gravando ${plano.escritas.length} célula(s) na aba ${plano.aba}...` })
     try {
       const r = await executarEscrita(gw, plano)
       dias.push({ data: plano.data, aba: plano.aba, plano, ...r })
+      const pend = contarPendencias(plano)
       const extra = [
-        plano.resumo.revisar ? `${plano.resumo.revisar} p/ revisão` : '',
+        pend ? `${pend} p/ revisão` : '',
         r.puladas.length ? `${r.puladas.length} já preenchida(s) por alguém` : '',
       ].filter(Boolean).join(', ')
       prog({ tipo: 'dia', data: plano.data, fase: 'pronto', detalhe: `${r.escritas.length} preenchida(s)${extra ? ' · ' + extra : ''}` })
@@ -428,4 +449,86 @@ function resumoExtra(extra?: ResultadoEscrita | ResultadoDesfazer): string {
     }
   }
   return out.join('\n')
+}
+
+// ── Memória entre aberturas do app ──────────────────────────────────────────
+// Dois arquivos na pasta de dados (só nesta máquina, como os relatórios):
+//   - ultimo-resultado.json: o último lote mostrado na tela (com o que foi
+//     justificado depois) — ao reabrir, o resumo e as pendências voltam;
+//   - conferencias.json: por dia, quando foi a última conferência GRAVADA e
+//     como ficou — é o que responde "já fizemos a chamada de hoje?".
+// Simulação atualiza só o último resultado: não conta como dia conferido.
+
+export interface UltimoResultado {
+  quando: string
+  modo: 'gravado' | 'simulacao'
+  lote: Lote
+  gravadas: number
+}
+
+export interface Conferencia {
+  quando: string
+  aba: string
+  lancados: number   // colaboradores do seu ponto com a célula do dia preenchida
+  pendencias: number
+  pendentes: string[] // nomes, pra mostrar sem precisar abrir o dia
+  feriado?: string    // dia não útil (coluna oculta): não há o que conferir
+}
+
+const arqUltimo = () => path.join(getDataDir(), 'ultimo-resultado.json')
+const arqConferencias = () => path.join(getDataDir(), 'conferencias.json')
+
+function lerJson<T>(arq: string): T | null {
+  try { return fs.existsSync(arq) ? JSON.parse(fs.readFileSync(arq, 'utf-8')) as T : null } catch { return null }
+}
+function gravarJson(arq: string, v: unknown): void {
+  fs.mkdirSync(path.dirname(arq), { recursive: true })
+  fs.writeFileSync(arq, JSON.stringify(v), 'utf-8')
+}
+
+export function lerUltimoResultado(): UltimoResultado | null {
+  return lerJson<UltimoResultado>(arqUltimo())
+}
+
+export function salvarUltimoResultado(r: UltimoResultado): void {
+  gravarJson(arqUltimo(), r)
+}
+
+export function lerConferencias(): Record<string, Conferencia> {
+  return lerJson<Record<string, Conferencia>>(arqConferencias()) ?? {}
+}
+
+const LANCADOS = new Set(['escrever', 'confere', 'ja_lancado', 'divergente', 'justificado'])
+
+/** Registra (ou atualiza) os dias destes planos como conferidos. `quando`
+ *  omitido = mantém a hora da conferência (ex.: depois de uma justificativa). */
+export function registrarConferencias(planos: Plano[], quando?: string): void {
+  const todas = lerConferencias()
+  for (const p of planos) {
+    const pendentes = p.itens.filter(i => SITUACOES_PENDENTES.includes(i.situacao)).map(i => i.nomePlanilha || i.nomePonto || '?')
+    todas[p.data] = {
+      quando: quando ?? todas[p.data]?.quando ?? new Date().toISOString(),
+      aba: p.aba,
+      lancados: p.itens.filter(i => LANCADOS.has(i.situacao)).length,
+      pendencias: pendentes.length,
+      pendentes,
+    }
+  }
+  gravarConferencias(todas)
+}
+
+// Feriado (coluna oculta) também conta como resolvido — senão ficaria pra sempre "não conferido".
+export function registrarFeriados(pulados: Lote['pulados'], quando: string): void {
+  const todas = lerConferencias()
+  for (const p of pulados) {
+    if (/oculta/i.test(p.motivo)) todas[p.data] = { quando, aba: '', lancados: 0, pendencias: 0, pendentes: [], feriado: p.motivo }
+  }
+  gravarConferencias(todas)
+}
+
+function gravarConferencias(todas: Record<string, Conferencia>): void {
+  // Guarda só os últimos ~3 meses.
+  const corte = toISO((() => { const d = new Date(); d.setDate(d.getDate() - 100); return { ano: d.getFullYear(), mes: d.getMonth() + 1, dia: d.getDate() } })())
+  for (const k of Object.keys(todas)) if (k < corte) delete todas[k]
+  gravarJson(arqConferencias(), todas)
 }

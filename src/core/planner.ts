@@ -26,6 +26,7 @@ export type Situacao =
   | 'sem_linha_no_mes'
   | 'nao_encontrado'
   | 'ausente_no_ponto'  // linha da planilha fora do ponto de quem logou (outro setor)
+  | 'justificado'       // era 'revisar'; o operador escolheu o código e ele foi gravado (service.justificar)
 
 export interface ItemPlano {
   situacao: Situacao
@@ -39,6 +40,7 @@ export interface ItemPlano {
   motivo: string
   ponto: Pick<PontoRegistro, 'status' | 'entrada1' | 'icone'> | null
   horario: { previsto: string; toleranciaMin: number; origem: string } | null
+  antes?: { situacao: Situacao; motivo: string } // só em 'justificado': pra onde volta se desfizer
 }
 
 export interface Escrita { celula: string; linha: number; coluna: number; codigo: Codigo }
@@ -68,6 +70,17 @@ export interface EntradaPlano {
 // negativo de manhã é só saldo parcial — `forcar` libera só esse caso.
 // Datas futuras param sempre. Domingos e feriados não passam por aqui: são
 // dias não úteis da planilha (colunas ocultas) e nunca são preenchidos.
+// O que precisa de uma pessoa: sem ponto, divergência e problemas de nome/linha.
+export const SITUACOES_PENDENTES: Situacao[] = ['revisar', 'divergente', 'nao_encontrado', 'ambiguo', 'sem_linha_no_mes']
+
+export function contarPendencias(p: Plano): number {
+  return p.itens.filter(i => SITUACOES_PENDENTES.includes(i.situacao)).length
+}
+
+export function recontarResumo(p: Plano): void {
+  for (const s of new Set([...Object.keys(p.resumo), 'justificado']) as Set<Situacao>) p.resumo[s] = p.itens.filter(i => i.situacao === s).length
+}
+
 export class AntesDoCorteError extends Error {}
 
 export function validarData(data: string, cfg: ConfigPlanilha, now: Date, forcar: boolean): string[] {
@@ -231,7 +244,7 @@ export function montarPlano(e: EntradaPlano): Plano {
     .map(i => ({ celula: i.celula!, linha: i.linha!, coluna: col, codigo: i.codigo! }))
 
   const resumo = Object.fromEntries(
-    (['escrever', 'confere', 'divergente', 'ja_lancado', 'revisar', 'ambiguo', 'sem_linha_no_mes', 'nao_encontrado', 'ausente_no_ponto'] as Situacao[])
+    (['escrever', 'confere', 'divergente', 'ja_lancado', 'revisar', 'ambiguo', 'sem_linha_no_mes', 'nao_encontrado', 'ausente_no_ponto', 'justificado'] as Situacao[])
       .map(s => [s, itens.filter(i => i.situacao === s).length]),
   ) as Record<Situacao, number>
 

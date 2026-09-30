@@ -22,6 +22,8 @@ contextBridge.exposeInMainWorld('agent', {
   abrirRegras: () => ipcRenderer.invoke('abrir-regras'),
   abrirConfig: () => ipcRenderer.invoke('abrir-config'),
   statusBot: () => ipcRenderer.invoke('status-bot'),
+  estadoInicial: () => ipcRenderer.invoke('estado-inicial'),
+  conferencias: () => ipcRenderer.invoke('conferencias'),
   historico: () => ipcRenderer.invoke('historico'),
   regrasCarregar: () => ipcRenderer.invoke('regras-carregar'),
   regrasSalvar: (regras: unknown) => ipcRenderer.invoke('regras-salvar', regras),

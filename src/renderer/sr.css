@@ -112,6 +112,28 @@ input:invalid { border-color: #D0453A; }
 input[type="checkbox"], input[type="radio"] { accent-color: var(--acao); width: 16px; height: 16px; margin: 0; }
 .caixa { display: inline-flex; align-items: center; gap: 8px; font-size: 13px; color: var(--texto-2); cursor: pointer; user-select: none; }
 
+/* Alternador em pílula (mesma altura/borda dos campos): um interruptor pequeno + texto.
+   Ligado, a pílula inteira fica azul-suave — dá pra ver o modo de relance. */
+.alternar {
+  display: inline-flex; align-items: center; gap: 10px; height: 34px; padding: 0 14px 0 8px; border-radius: 99px;
+  border: 1px solid var(--borda-forte); background: var(--superficie); font-size: 13px; font-weight: 500; color: var(--texto-2);
+  cursor: pointer; user-select: none; transition: background .15s, border-color .15s, color .15s;
+}
+.alternar:hover { border-color: #CFCFCA; color: var(--texto); }
+.alternar input {
+  appearance: none; -webkit-appearance: none; position: relative; flex-shrink: 0; width: 28px; height: 16px; margin: 0; border-radius: 99px;
+  background: #D6D6D1; cursor: pointer; transition: background .15s;
+}
+.alternar input::after {
+  content: ''; position: absolute; top: 2px; left: 2px; width: 12px; height: 12px; border-radius: 99px; background: #FFFFFF;
+  box-shadow: 0 1px 2px rgba(20, 20, 22, .2); transition: transform .15s ease;
+}
+.alternar input:checked { background: var(--acao); }
+.alternar input:checked::after { transform: translateX(12px); }
+.alternar input:focus-visible { outline: none; box-shadow: var(--foco); }
+.alternar:has(input:checked) { background: var(--acao-suave); border-color: var(--acao-borda); color: var(--acao-texto); }
+.alternar:has(input:disabled) { opacity: .55; cursor: default; }
+
 /* ── Cartões e seções ──────────────────────────────────── */
 .cartao { background: var(--superficie); border: 1px solid var(--borda); border-radius: 20px; box-shadow: var(--sombra-1); padding: 22px 24px; }
 .cartao > h2, .titulo-secao { font-size: 16px; font-weight: 600; letter-spacing: -.01em; }

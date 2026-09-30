@@ -19,6 +19,17 @@
     .opcoes .dia { display: inline-flex; align-items: center; gap: 8px; font-weight: 500; color: var(--texto); }
     .opcoes .dia input { width: 160px; height: 34px; }
     .opcoes .sep { width: 1px; height: 18px; background: var(--borda); }
+    .semana { display: flex; gap: 8px; flex-wrap: wrap; justify-content: center; width: min(760px, 100%); }
+    .sem-dia { min-width: 104px; display: flex; flex-direction: column; align-items: flex-start; gap: 2px; padding: 8px 12px; border-radius: 12px; border: 1px solid var(--borda); background: var(--superficie); font-family: inherit; text-align: left; cursor: pointer; transition: border-color .15s, background .15s; }
+    .sem-dia:hover:not(:disabled) { border-color: #CFCFCA; }
+    .sem-dia .n { display: flex; align-items: center; gap: 6px; font-size: 13px; font-weight: 600; color: var(--texto); }
+    .sem-dia .n i { width: 7px; height: 7px; border-radius: 99px; background: #D6D6D1; }
+    .sem-dia .e { font-size: 12px; color: var(--texto-3); }
+    .sem-dia.ok .n i { background: var(--sucesso); } .sem-dia.ok .e { color: var(--sucesso); }
+    .sem-dia.pend .n i { background: var(--atencao-ponto); } .sem-dia.pend .e { color: var(--atencao); }
+    .sem-dia.falta { border-style: dashed; background: var(--superficie-2); }
+    .sem-dia.futuro { opacity: .5; cursor: default; }
+    .sem-dia[aria-current="date"] { border-color: var(--acao); box-shadow: 0 0 0 3px rgba(36, 81, 214, .12); }
     .conversa { display: flex; flex-direction: column; gap: 16px; }
     .bolha-eu { align-self: flex-end; max-width: 70%; padding: 10px 16px; border-radius: 16px 16px 4px 16px; background: var(--realce); font-size: 15px; }
     .bot { display: flex; gap: 14px; align-items: flex-start; }
@@ -148,9 +159,10 @@
       <div class="opcoes">
         <label class="dia">Dia <input type="date" id="data" aria-label="Dia" /></label>
         <span class="sep"></span>
-        <label class="caixa" title="Mostra o que seria preenchido, sem gravar nada"><input type="checkbox" id="simular" /> simular (não grava)</label>
-        <label class="caixa" title="Inclui o dia de hoje mesmo antes do horário de corte"><input type="checkbox" id="forcar" /> incluir hoje antes do corte</label>
+        <label class="alternar" title="Mostra o que seria preenchido, sem gravar nada"><input type="checkbox" role="switch" id="simular" /> Simular (não grava)</label>
+        <label class="alternar" title="Inclui o dia de hoje mesmo antes do horário de corte"><input type="checkbox" role="switch" id="forcar" /> Incluir hoje antes do corte</label>
       </div>
+      <div class="semana" id="semana" aria-label="Esta semana"></div>
       <details class="avancado">
         <summary>Avançado</summary>
         <div class="linha">
@@ -218,6 +230,7 @@
     const NOME_CODIGO = Object.fromEntries(JUSTIFICATIVAS)
 
     let ultimoLote = null        // último resultado (alimenta frequência, atenção e detalhes)
+    let conferencias = {}        // data → última conferência gravada (conferencias.json)
     let ocupadoAgora = false
     let htmlPaths = []
 
@@ -415,7 +428,7 @@
     function responder(texto, corpo) {
       const r = $('resposta')
       r.replaceChildren(
-        texto ? el('div', { className: 'bolha-eu', textContent: texto }) : null,
+        ...(texto ? [el('div', { className: 'bolha-eu', textContent: texto })] : []),
         el('div', { className: 'bot' }, el('div', { className: 'avatar', html: LOGO }), el('div', { className: 'corpo' }, ...corpo)))
       r.hidden = false
       r.classList.remove('entrar'); void r.offsetWidth; r.classList.add('entrar')
@@ -429,32 +442,64 @@
       ])
     }
 
+    // Mesma regra do bot (SITUACOES_PENDENTES em planner.ts) — um número só em toda a tela.
+    const PENDENTES = ['revisar', 'divergente', 'nao_encontrado', 'ambiguo', 'sem_linha_no_mes']
+    const pendentesDe = p => p.itens.filter(i => PENDENTES.includes(i.situacao)).length
+    const LANCADOS = ['escrever', 'confere', 'ja_lancado', 'divergente', 'justificado']
+    const lancadosDe = p => p.itens.filter(i => LANCADOS.includes(i.situacao)).length
+
+    // ── esta semana: o que já foi conferido (lembra entre aberturas do app) ──
+    function segundaDe(iso) { const d = deISO(iso); d.setDate(d.getDate() - (d.getDay() === 0 ? 6 : d.getDay() - 1)); return d }
+    function isoDe(d) { return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}` }
+    function diasDaSemana(iso) { const s = segundaDe(iso); return Array.from({ length: 6 }, (_, k) => { const d = new Date(s); d.setDate(s.getDate() + k); return isoDe(d) }) }
+    function renderSemana() {
+      const hoje = hojeISO(), escolhido = $('data').value || hoje
+      $('semana').replaceChildren(...diasDaSemana(escolhido).map(data => {
+        const c = conferencias[data], futuro = data > hoje
+        let cls = 'falta', txt = data === hoje ? 'ainda não conferido' : 'não conferido'
+        if (futuro) { cls = 'futuro'; txt = '—' }
+        else if (c && c.feriado) { cls = ''; txt = 'feriado' }
+        else if (c && c.pendencias) { cls = 'pend'; txt = `${plural(c.pendencias, 'pendência', 'pendências')}` }
+        else if (c) { cls = 'ok'; txt = `conferido · ${quando(c.quando).replace(/^Hoje, |^Ontem, /, '')}` }
+        const b = el('button', { className: 'sem-dia ' + cls, disabled: futuro, title: c && c.pendentes && c.pendentes.length ? 'Pendente: ' + c.pendentes.join(', ') : '', onClick: () => { $('data').value = data; renderSemana() } },
+          el('span', { className: 'n' }, el('i'), nomeDia(data)), el('span', { className: 'e', textContent: txt }))
+        if (data === escolhido) b.setAttribute('aria-current', 'date')
+        return b
+      }))
+    }
+    $('data').addEventListener('change', renderSemana)
     function contar(lote) {
       const t = { escrever: 0, revisar: 0, divergente: 0, nao_encontrado: 0, confere: 0 }
       for (const p of lote.planos) for (const k of Object.keys(t)) t[k] += p.resumo[k] || 0
-      t.atencao = t.revisar + t.divergente + t.nao_encontrado
-      for (const p of lote.planos) t.atencao += (p.resumo.ambiguo || 0) + (p.resumo.sem_linha_no_mes || 0)
+      t.atencao = lote.planos.reduce((s, p) => s + pendentesDe(p), 0)
       return t
     }
 
-    function renderTudo(lote, modo, texto, escrita) {
+    function renderTudo(lote, modo, texto, escrita, restaurado) {
       const t = contar(lote)
       const gravadas = escrita ? escrita.dias.reduce((s, d) => s + d.escritas.length, 0) : 0
       const nDias = lote.planos.length
       const frase = el('p', { className: 'fala' })
-      if (modo === 'simulacao') frase.append(el('b', { textContent: 'Simulação. ' }), `Conferi ${plural(nDias, 'dia', 'dias')}: ${plural(t.escrever, 'célula seria preenchida', 'células seriam preenchidas')}. Nada foi gravado.`)
+      if (restaurado) {
+        const ps = lote.planos
+        const dias = !ps.length ? '' : ps.length === 1 ? diaLongo(ps[0].data) : `${nomeDia(ps[0].data)} a ${nomeDia(ps[ps.length - 1].data)}`
+        frase.append(el('b', { textContent: modo === 'simulacao' ? 'Última simulação. ' : 'Última conferência. ' }),
+          `${dias[0] ? dias[0].toUpperCase() + dias.slice(1) : ''}${restaurado.gravadas ? ` · ${plural(restaurado.gravadas, 'célula preenchida', 'células preenchidas')}` : ''}.`)
+      } else if (modo === 'simulacao') frase.append(el('b', { textContent: 'Simulação. ' }), `Conferi ${plural(nDias, 'dia', 'dias')}: ${plural(t.escrever, 'célula seria preenchida', 'células seriam preenchidas')}. Nada foi gravado.`)
       else if (escrita && escrita.erro) frase.append(el('b', { textContent: 'Parei no meio. ' }), escrita.erro)
       else frase.append(el('b', { textContent: 'Pronto. ' }), `Conferi ${plural(nDias, 'dia', 'dias')} e preenchi ${plural(gravadas, 'célula', 'células')}.`)
       if (t.atencao) frase.append(` ${plural(t.atencao, 'caso precisa', 'casos precisam')} da sua revisão.`)
-      frase.append(el('span', { className: 'hora', textContent: `hoje, ${horaAgora()}` }))
+      frase.append(el('span', { className: 'hora', textContent: restaurado ? quando(restaurado.quando).toLowerCase() : `hoje, ${horaAgora()}` }))
 
-      const porDia = new Map((escrita ? escrita.dias : []).map(d => [d.data, d]))
+      // Simulação: quantas seriam preenchidas. Gravado: quantos do seu ponto já estão na planilha
+      // (preenchidos agora + os que já estavam) — "0 preenchidas" num dia já feito confundia.
       const mini = el('div', { className: 'dias-mini' }, ...lote.planos.map(p => {
-        const n = modo === 'simulacao' ? p.escritas.length : (porDia.get(p.data)?.escritas.length || 0)
-        const pend = (p.resumo.revisar || 0) + (p.resumo.divergente || 0) + (p.resumo.nao_encontrado || 0)
+        const doPonto = p.itens.filter(i => i.situacao !== 'ausente_no_ponto').length
+        const n = modo === 'simulacao' ? `${p.escritas.length} a preencher` : `${lancadosDe(p)} de ${doPonto} lançados`
+        const pend = pendentesDe(p)
         return el('div', { className: 'dia-mini' },
           el('div', { className: 't' }, el('span', { textContent: nomeDia(p.data) }), el('span', { html: pend ? '' : OK })),
-          el('span', { className: 'n', textContent: `${n} ${modo === 'simulacao' ? 'a preencher' : 'preenchidas'}` }),
+          el('span', { className: 'n', textContent: n }),
           el('span', { className: 'nota', style: `color:${pend ? '#8A4F00' : '#177245'}`, textContent: pend ? `${pend} p/ revisão` : 'tudo certo' }))
       }), ...lote.pulados.map(p => el('div', { className: 'dia-mini' },
         el('div', { className: 't' }, el('span', { textContent: nomeDia(p.data) })),
@@ -462,13 +507,13 @@
 
       const acoes = el('div', { className: 'acoes-linha' })
       if (t.atencao) acoes.append(el('button', { className: 'btn primario', textContent: `Revisar ${plural(t.atencao, 'pendência', 'pendências')}`, onClick: () => abrirDetalhes('pendencias') }))
-      if (modo === 'simulacao' && t.escrever) acoes.append(el('button', { className: 'btn primario', textContent: `Gravar agora (${t.escrever})`, onClick: gravarSimulacao }))
+      if (modo === 'simulacao' && t.escrever && !restaurado) acoes.append(el('button', { className: 'btn primario', textContent: `Gravar agora (${t.escrever})`, onClick: gravarSimulacao }))
       acoes.append(el('button', { className: 'btn', textContent: 'Ver detalhes', onClick: () => abrirDetalhes() }))
-      if (gravadas) acoes.append(el('button', { className: 'btn fantasma', textContent: 'Desfazer', onClick: desfazerUltima }))
+      if (gravadas && !restaurado) acoes.append(el('button', { className: 'btn fantasma', textContent: 'Desfazer', onClick: desfazerUltima }))
 
       const extras = []
       if (lote.erros.length) extras.push(el('div', { className: 'alerta erro' }, el('span', { className: 'ponto' }), el('div', {}, el('b', { textContent: 'Dias com problema' }), el('span', { textContent: lote.erros.map(e => `${e.data ? diaLongo(e.data) : e.arquivo}: ${e.motivo}`).join('\n') }))))
-      responder(texto, [frase, mini, acoes, ...extras])
+      responder(restaurado ? null : texto, [frase, mini, acoes, ...extras])
       renderFrequencia(lote)
       renderAtencao()
       renderDetalhes(lote)
@@ -499,8 +544,8 @@
       let voltaram = null
       for (const d of r.dias || []) for (const p of ultimoLote?.planos || []) {
         if (p.data !== d.data) continue
-        for (const i of p.itens) if (i.situacao === 'justificado' && d.apagadas.includes(i.celula)) {
-          Object.assign(i, { situacao: i.situacaoAntes, motivo: i.motivoAntes, codigo: null }); voltaram = p.data
+        for (const i of p.itens) if (i.situacao === 'justificado' && i.antes && d.apagadas.includes(i.celula)) {
+          Object.assign(i, { situacao: i.antes.situacao, motivo: i.antes.motivo, codigo: null }); delete i.antes; voltaram = p.data
         }
       }
       if (voltaram) reRenderizar(voltaram)
@@ -574,6 +619,12 @@
       if (status && !status.planilha) add('#B42318', 'Planilha não conectada', 'Sem ela o bot não consegue ler nem gravar.', 'Abrir Configurações', () => window.agent.abrirConfig())
       if (status && !status.ponto) add('#B42318', 'Login do ponto não configurado', 'O bot usa o seu login da Central do Funcionário.', 'Abrir Configurações', () => window.agent.abrirConfig())
       if (status && !status.regras) add('#E3A13B', 'Horários e regras vazios', 'Defina entrada padrão, tolerância e horário de corte.', 'Abrir Horários e regras', () => window.agent.abrirRegras())
+      // Dias desta semana (até hoje, sem domingo) sem conferência gravada.
+      const hoje = hojeISO()
+      const faltam = diasDaSemana(hoje).filter(d => d <= hoje && !conferencias[d])
+      if (faltam.includes(hoje)) add('#2451D6', 'Hoje ainda não foi conferido', 'O bot lembra o que já foi feito — quando conferir, some daqui.', 'Preencher hoje', () => { $('data').value = hoje; renderSemana(); rodar({ acao: 'dia', data: hoje, simular: $('simular').checked }, 'Preencher hoje') })
+      const antes = faltam.filter(d => d !== hoje)
+      if (antes.length) add('#E3A13B', `${antes.map(nomeDia).join(', ')} ${antes.length === 1 ? 'não foi conferido' : 'não foram conferidos'}`, 'Nenhum preenchimento gravado nesses dias.', 'Conferir semana', () => rodar({ acao: 'semana', data: hoje, simular: $('simular').checked }, 'Conferir semana'))
       if (ultimoLote) {
         const itensDe = s => ultimoLote.planos.flatMap(p => p.itens.filter(i => i.situacao === s).map(i => ({ ...i, data: p.data })))
         const rev = itensDe('revisar'), nao = itensDe('nao_encontrado'), div = itensDe('divergente')
@@ -588,11 +639,14 @@
 
     // ── atividade recente ──
     async function carregarAtividade() {
+      try { conferencias = (await window.agent.conferencias()) || {} } catch { /* app antigo aberto */ }
+      renderSemana()
+      renderAtencao()
       const h = await window.agent.historico()
       $('atividade').replaceChildren(...(h.length ? h.map(e => el('div', { className: 'evento' },
-        el('div', { className: 'trilho' }, el('i', { style: `background:${e.tipo === 'escrita' ? '#2451D6' : '#E3A13B'}` }), el('u')),
+        el('div', { className: 'trilho' }, el('i', { style: `background:${e.tipo === 'escrita' ? '#2451D6' : e.tipo === 'justificativa' ? '#177245' : '#E3A13B'}` }), el('u')),
         el('div', { className: 'txt' },
-          el('b', { textContent: e.tipo === 'escrita' ? `${nomeDia(e.data)} preenchido · ${plural(e.celulas, 'célula', 'células')}` : `Escrita desfeita · ${nomeDia(e.data)} · ${plural(e.celulas, 'célula', 'células')}` }),
+          el('b', { textContent: e.tipo === 'escrita' ? `${nomeDia(e.data)} preenchido · ${plural(e.celulas, 'célula', 'células')}` : e.tipo === 'justificativa' ? `Justificativa · ${nomeDia(e.data)} · ${plural(e.celulas, 'célula', 'células')}` : `Escrita desfeita · ${nomeDia(e.data)} · ${plural(e.celulas, 'célula', 'células')}` }),
           el('span', { textContent: quando(e.quando) })))) : [el('div', { className: 'vazio', style: 'padding:8px 0 4px' },
         el('b', { textContent: 'Nenhuma execução ainda' }), el('span', { textContent: 'Quando você preencher um dia, ele aparece aqui.' }))]))
     }
@@ -660,7 +714,7 @@
       // Atualiza a tela: quem foi gravado sai das pendências e passa pra "Preenchidos".
       for (const e of r.escritas) {
         const i = plano.itens.find(i => i.celula === e.celula)
-        Object.assign(i, { situacaoAntes: i.situacao, motivoAntes: i.motivo, situacao: 'justificado', codigo: e.codigo, motivo: `Justificado por você: ${e.codigo} · ${NOME_CODIGO[e.codigo] || ''}` })
+        Object.assign(i, { antes: { situacao: i.situacao, motivo: i.motivo }, situacao: 'justificado', codigo: e.codigo, motivo: `Justificado por você: ${e.codigo} · ${NOME_CODIGO[e.codigo] || ''}` })
       }
       reRenderizar(plano.data)
       const msg = `${plural(r.escritas.length, 'justificativa gravada', 'justificativas gravadas')}`
@@ -697,7 +751,7 @@
           const n = p.itens.filter(i => sits.includes(i.situacao)).length
           seg.append(el('button', { className: 'aba', role: 'tab', textContent: `${rot} · ${n}`, onClick: () => mostrar(k), 'data-k': k }))
         }
-        const pend = p.itens.filter(i => FILTROS[0][2].includes(i.situacao)).length
+        const pend = pendentesDe(p)
         mostrar(pend ? 'pendencias' : 'preenchidos')
         const avisos = [...new Set(p.avisos)].filter(a => !comuns.includes(a))
         corpo.append(seg, area)
@@ -742,8 +796,19 @@
 
     // ── início ──
     renderFrequencia(null)
+    renderSemana()
     atualizarStatus()
     carregarAtividade()
+    // Ao reabrir: volta o último resultado (resumo, frequência e pendências — dá pra justificar).
+    ;(async () => {
+      let est = null
+      try { est = await window.agent.estadoInicial() } catch { return }
+      if (!est || !est.ultimo || ultimoLote) return
+      conferencias = est.conferencias || conferencias
+      ultimoLote = est.ultimo.lote
+      renderTudo(ultimoLote, est.ultimo.modo, null, null, est.ultimo)
+      renderSemana()
+    })()
     $('cmd').focus()
   </script>
 </body>

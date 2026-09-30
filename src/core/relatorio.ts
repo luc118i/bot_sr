@@ -10,10 +10,11 @@ export const ROTULO_SITUACAO: Record<Situacao, string> = {
   sem_linha_no_mes: 'Sem linha na aba do mês',
   nao_encontrado: 'Não encontrado na planilha',
   ausente_no_ponto: 'Fora do seu ponto (outros setores)',
+  justificado: 'Justificado pelo operador',
 }
 
 const ORDEM: Situacao[] = [
-  'escrever', 'revisar', 'divergente', 'nao_encontrado', 'sem_linha_no_mes', 'ambiguo',
+  'escrever', 'justificado', 'revisar', 'divergente', 'nao_encontrado', 'sem_linha_no_mes', 'ambiguo',
   'confere', 'ja_lancado', 'ausente_no_ponto',
 ]
 
