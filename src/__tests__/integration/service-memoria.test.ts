@@ -91,7 +91,7 @@ describe('relatórios e histórico', () => {
     assert.match(path.basename(txt), /^2026-09-28_escrita_2026-09-28T22-00-00-000Z\.txt$|^2026-09-28_escrita_.*\.txt$/)
     const json = JSON.parse(fs.readFileSync(txt.replace(/\.txt$/, '.json'), 'utf-8'))
     assert.deepEqual(json.extra.escritas, r.escritas)
-    assert.match(fs.readFileSync(txt, 'utf-8'), /── Gravadas \(4\) ──/)
+    assert.match(fs.readFileSync(txt, 'utf-8'), /── Gravadas \(5\) ──/)
   })
 
   it('nome do arquivo não tem caractere proibido no Windows', async () => {

@@ -37,12 +37,21 @@ describe('Codigo.gs: segurança', () => {
     assert.equal(post('isto não é json').ok, false)
   })
 
-  it('lock é SEMPRE liberado, mesmo quando a ação falha', () => {
+  it('lock é SEMPRE liberado, mesmo quando a gravação falha', () => {
     const { post, lock } = sandbox(planilhaDoCenario())
     assert.equal(post({ token: 'tok', acao: 'escrever', aba: 'Nao existe', valores: [] }).ok, false)
-    assert.equal(post({ token: 'tok', acao: 'info' }).ok, true)
+    assert.equal(post({ token: 'tok', acao: 'limpar', aba: 'Setembro', celulas: [] }).ok, true)
     assert.equal(lock.esperas, 2)
     assert.equal(lock.liberacoes, 2)
+  })
+
+  it('leituras não entram na fila do lock (a tela de regras lê várias de uma vez)', () => {
+    const { post, lock } = sandbox(planilhaDoCenario())
+    lock.falhar = true // se alguma leitura pedisse o lock, falharia
+    for (const req of [{ acao: 'info' }, { acao: 'lerGrid', aba: 'Setembro' }, { acao: 'colunasOcultas', aba: 'Setembro' }, { acao: 'lerCelulas', aba: 'Setembro', celulas: ['AH8'] }]) {
+      assert.equal(post({ token: 'tok', ...req }).ok, true, req.acao)
+    }
+    assert.equal(lock.esperas, 0)
   })
 
   it('lock ocupado → erro, nada escrito', () => {
@@ -101,12 +110,12 @@ describe('Codigo.gs + AppsScriptGateway: ponta a ponta', () => {
     const gw = new AppsScriptGateway('https://script.google.com/macros/s/ID/exec', 'tok')
 
     const plano = await simular(gw, { data: '2026-09-28', html: htmlFixture(), now: NOITE })
-    assert.deepEqual(plano.escritas.map(e => `${e.celula}=${e.codigo}`).sort(), ['AH10=P', 'AH16=AT', 'AH8=.', 'AH9=.'])
+    assert.deepEqual(plano.escritas.map(e => `${e.celula}=${e.codigo}`).sort(), ['AH10=P', 'AH13=.', 'AH16=AT', 'AH8=.', 'AH9=.'])
     const r = await executarEscrita(gw, plano)
-    assert.equal(r.escritas.length, 4)
+    assert.equal(r.escritas.length, 5)
     assert.equal(pl.abas['Setembro']!.grid[9]![33], 'P')
     const d = await desfazerEscrita(gw, plano.aba, r.escritas)
-    assert.equal(d.apagadas.length, 4)
+    assert.equal(d.apagadas.length, 5)
     assert.equal(pl.abas['Setembro']!.grid[9]![33], '')
   })
 

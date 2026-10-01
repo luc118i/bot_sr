@@ -19,6 +19,8 @@
     th { padding: 0 8px 8px 0; }
     td { padding: 6px 8px 6px 0; vertical-align: middle; }
     td input, td select { height: 36px; }
+    input.hora { font-family: var(--mono); }
+    input.hora.invalida { border-color: var(--erro); background: var(--erro-suave); }
     td.del { width: 36px; text-align: center; }
     section .vazio { display: block; text-align: left; padding: 4px 0 2px; font-size: 13px; color: var(--texto-3); }
     button.x { width: 32px; height: 32px; border-radius: 8px; border: 0; background: none; color: #8A8A92; font-size: 18px; cursor: pointer; transition: background .15s, color .15s; }
@@ -54,9 +56,19 @@
   <header class="topo">
     <div class="marca">
       <span class="logo"><svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="#fff" stroke-width="1.6" stroke-linecap="round"><path d="M3 5h10M3 8h6M3 11h8"/></svg></span>
-      Horários e regras
+      SR_dados
     </div>
-    <span class="ter" style="font-size:13px">Salvo nesta máquina · a planilha não recebe configuração</span>
+    <nav aria-label="Principal">
+      <button class="nav" id="navInicio">Início</button>
+      <button class="nav ativa" aria-current="page">Horários e regras</button>
+      <button class="nav" id="navRelatorios">Relatórios</button>
+    </nav>
+    <div style="display:flex;align-items:center;gap:10px">
+      <span class="ter" style="font-size:13px">Salvo nesta máquina</span>
+      <button class="btn icone" id="btnConfig" aria-label="Configurações" title="Configurações">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#55555D" stroke-width="1.8" stroke-linecap="round"><path d="M4 7h10M18 7h2M4 17h4M12 17h8"/><circle cx="16" cy="7" r="2"/><circle cx="10" cy="17" r="2"/></svg>
+      </button>
+    </div>
   </header>
 
   <main>
@@ -66,9 +78,9 @@
       <h2>Padrão</h2>
       <p class="hint">Vale para todo mundo que não tiver horário individual. Entrada até <b>padrão + tolerância</b> = <span class="mono">.</span> · depois = <span class="mono">P</span>.</p>
       <div class="row">
-        <div class="field" style="width:160px"><label for="entrada_padrao">Entrada padrão</label><input type="time" id="entrada_padrao" /></div>
+        <div class="field" style="width:160px"><label for="entrada_padrao">Entrada padrão</label><input type="text" class="hora" id="entrada_padrao" placeholder="08:00" maxlength="6" autocomplete="off" /></div>
         <div class="field" style="width:160px"><label for="tolerancia_min">Tolerância (min)</label><input type="number" min="0" max="120" id="tolerancia_min" /></div>
-        <div class="field" style="width:240px"><label for="horario_corte">Horário de corte</label><input type="time" id="horario_corte" />
+        <div class="field" style="width:240px"><label for="horario_corte">Horário de corte</label><input type="text" class="hora" id="horario_corte" placeholder="17:30" maxlength="6" autocomplete="off" />
           <div class="hint">Antes disso o dia de hoje não é classificado.</div></div>
       </div>
     </section>
@@ -82,19 +94,23 @@
           <span id="setoresSel"></span>
           <select id="setorAdd" aria-label="Adicionar setor"></select>
         </div>
+        <div class="hint" id="planilhaEstado" aria-live="polite"></div>
       </div>
       <div id="t-horarios"></div>
     </section>
 
     <section>
-      <h2>Exceções de um dia</h2>
-      <p class="hint">Vale só na data informada. Use <b>entrada prevista</b> (ex.: avisou que chega às 10h) e/ou <b>código</b> (ex.: você já sabe que é atestado).</p>
+      <h2>Exceções</h2>
+      <p class="hint"><b>Só neste dia</b>: vale na data informada (ex.: avisou que hoje chega às 10h; você já sabe que é atestado).
+        <b>Sempre</b>: vale todo dia até você remover da lista (ex.: entra às 9h, combinado com o gestor).
+        Use <b>entrada prevista</b> e/ou <b>código</b>. Se houver as duas, a do dia ganha da permanente.</p>
       <div id="t-excecoes"></div>
     </section>
 
     <section>
       <h2>Apelidos</h2>
-      <p class="hint">Quando o nome no ponto é diferente do nome na planilha (ex.: nome cortado na BASE DE DADOS). Copie o nome exatamente como aparece no ponto.</p>
+      <p class="hint">Nomes parecidos já casam sozinhos: mesmo primeiro nome e pelo menos 70% das palavras iguais (ex.: nome cortado na BASE DE DADOS; erro de digitação num sobrenome).
+        Use apelido só quando o bot não achar — ex.: apelido, primeiro nome diferente (LUIS × LUIZ). Pode colar o nome do ponto ou o da planilha.</p>
       <div id="t-apelidos"></div>
     </section>
 
@@ -121,10 +137,10 @@
 
     // Cada tabela: colunas → tipo do input. 'colab' mostra "ADM — NOME" e guarda só o ADM.
     const TABELAS = {
-      horarios: [['adm', 'Colaborador', 'colab', 250], ['entrada', 'Entrada', 'time', 104], ['tolerancia_min', 'Tol. (min)', 'number', 84],
+      horarios: [['adm', 'Colaborador', 'colab', 250], ['entrada', 'Entrada', 'hora', 104], ['tolerancia_min', 'Tol. (min)', 'number', 84],
         ['vigencia_inicio', 'Vigência início', 'date', 146], ['vigencia_fim', 'Vigência fim', 'date', 146], ['obs', 'Obs.', 'text']],
-      excecoes: [['data', 'Data', 'date', 140], ['adm', 'Colaborador', 'colab', 320], ['entrada_prevista', 'Entrada prevista', 'time', 120],
-        ['codigo', 'Código', 'codigo', 90], ['obs', 'Obs.', 'text']],
+      excecoes: [['recorrente', 'Quando', 'quando', 200], ['data', 'Data', 'date', 140], ['adm', 'Colaborador', 'colab', 240], ['entrada_prevista', 'Entrada prevista', 'hora', 112],
+        ['codigo', 'Código', 'codigo', 84], ['obs', 'Obs.', 'text']],
       apelidos: [['nome_no_ponto', 'Nome no ponto', 'text', 320], ['adm', 'Colaborador na planilha', 'colab', 320], ['obs', 'Obs.', 'text']],
     }
     // Campos que a tela não mostra mas precisam ser salvos intactos.
@@ -138,7 +154,41 @@
     const rotuloColab = adm => { const c = porAdm.get(adm); return c ? `${c.adm} — ${c.nome}` : adm }
     const admDe = v => (/^\s*(\d+)/.exec(v || '') || [])[1] || String(v || '').trim()
 
+    // Hora digitada do jeito que sair: "9", "9h", "9h30", "930", "0930", "9:30", "9.30" → "09:30".
+    // Devolve null se não der pra entender (o campo fica vermelho e o salvar explica).
+    function normalizarHora(v) {
+      const s = String(v || '').trim().toLowerCase().replace(/\s+/g, '')
+      if (!s) return ''
+      const m = /^(\d{1,2})(?:[:h.,]?(\d{2}))?h?$/.exec(s) || /^(\d{1,2})(\d{2})$/.exec(s)
+      if (!m) return null
+      const h = Number(m[1]), min = Number(m[2] || 0)
+      return h <= 23 && min <= 59 ? `${String(h).padStart(2, '0')}:${String(min).padStart(2, '0')}` : null
+    }
+    // Campo de hora como texto livre: guarda já normalizado e, ao sair, mostra no formato hh:mm.
+    function ligarHora(i, onChange) {
+      const aplicar = (mostrar) => {
+        const n = normalizarHora(i.value)
+        i.classList.toggle('invalida', n === null)
+        onChange(n === null ? i.value.trim() : n)
+        if (mostrar && n !== null) i.value = n
+      }
+      i.addEventListener('input', () => { aplicar(false); marcar() })
+      i.addEventListener('blur', () => aplicar(true))
+    }
+
     function input(tipo, valor, onChange) {
+      if (tipo === 'hora') {
+        const i = el('input', { type: 'text', className: 'hora', value: valor || '', placeholder: 'hh:mm', maxLength: 6, autocomplete: 'off' })
+        ligarHora(i, onChange)
+        return i
+      }
+      if (tipo === 'quando') {
+        const s = el('select', { className: 'quando' })
+        s.append(el('option', { value: '', textContent: 'Só neste dia' }), el('option', { value: 'sempre', textContent: 'Sempre (até remover)' }))
+        s.value = valor === 'sempre' ? 'sempre' : ''
+        s.onchange = () => { onChange(s.value); marcar() }
+        return s
+      }
       if (tipo === 'codigo') {
         const s = el('select')
         for (const c of CODIGOS) s.append(el('option', { value: c, textContent: c || '—' }))
@@ -161,8 +211,15 @@
       const head = el('tr', {}, ...cols.map(([, t, , w]) => { const th = el('th', { textContent: t }); if (w) th.style.width = w + 'px'; return th }), el('th'))
       const body = el('tbody')
       dados[nome].forEach((linha, idx) => {
+        // Exceção permanente não tem data: a célula mostra "todo dia".
+        const celula = (k, tipo) => k === 'data' && linha.recorrente === 'sempre'
+          ? el('span', { className: 'ter', style: 'font-size:13px', textContent: 'todo dia' })
+          : input(tipo, linha[k], v => {
+            linha[k] = v
+            if (tipo === 'quando') { if (v === 'sempre') linha.data = ''; render(nome) }
+          })
         body.append(el('tr', {},
-          ...cols.map(([k, , tipo]) => el('td', {}, input(tipo, linha[k], v => { linha[k] = v }))),
+          ...cols.map(([k, , tipo]) => el('td', {}, celula(k, tipo))),
           el('td', { className: 'del' }, el('button', { className: 'x', title: 'Remover', textContent: '×', onclick: () => { dados[nome].splice(idx, 1); render(nome); marcar() } })),
         ))
       })
@@ -204,36 +261,64 @@
       renderSetores(); preencherColabs(); marcar()
     }
 
-    async function carregar() {
-      $('btnSalvar').disabled = true
-      const r = await window.agent.regrasCarregar()
-      if (!r.ok) return msgs([['err', r.message]])
-      colaboradores = r.colaboradores
+    // Colaboradores e feriados vêm da planilha. Primeiro aparece a última lista
+    // guardada nesta máquina; a lista fresca chega depois e troca sem mexer no
+    // que a pessoa está digitando.
+    function aplicarPlanilha(p) {
+      colaboradores = p.colaboradores
       porAdm.clear(); for (const c of colaboradores) porAdm.set(c.adm, c)
-
-      setoresSel = [...(r.regras.setores || [])].sort()
       // Um setor salvo que sumiu da BASE DE DADOS continua aparecendo pra poder ser removido.
       todosSetores = [...new Set([...colaboradores.filter(c => c.ativo).map(c => c.setor).filter(Boolean), ...setoresSel])].sort()
       renderSetores()
       preencherColabs()
-
-      for (const k of ['entrada_padrao', 'tolerancia_min', 'horario_corte']) {
-        $(k).value = r.regras.geral[k] || ''
-        $(k).oninput = marcar
+      for (const i of document.querySelectorAll('input[list="colabs"]')) {
+        if (i === document.activeElement) continue
+        const adm = admDe(i.value)
+        if (porAdm.has(adm)) i.value = rotuloColab(adm)
       }
-      for (const nome of Object.keys(TABELAS)) { dados[nome] = r.regras[nome]; render(nome) }
-
-      if (!r.feriados.length) $('feriados').textContent = 'Planilha não conectada — configure a conexão para ver os feriados.'
-      else $('feriados').replaceChildren(...r.feriados.map(f => el('div', {
+      $('feriados').replaceChildren(...(p.feriados.length ? p.feriados.map(f => el('div', {
         textContent: f.erro ? `${f.aba}: não deu pra ler (${f.erro})`
           : `${f.aba}: ${f.dias.length ? f.dias.map(d => 'dia ' + d).join(', ') : 'nenhum feriado (só domingos ocultos)'}`,
-      })))
+      })) : [el('div', { textContent: 'Nenhuma aba de mês lida.' })]))
+    }
+
+    function situacaoPlanilha(texto, carregando) {
+      $('planilhaEstado').textContent = texto
+      $('planilhaEstado').classList.toggle('carregando', !!carregando)
+    }
+
+    async function atualizarPlanilha() {
+      situacaoPlanilha('Atualizando colaboradores e feriados da planilha…', true)
+      const p = await window.agent.regrasPlanilha().catch(err => ({ ok: false, message: String(err.message || err) }))
+      if (!p.ok) {
+        situacaoPlanilha(colaboradores.length ? 'Mostrando a última lista guardada — a planilha não respondeu agora.' : '')
+        if (!colaboradores.length) $('feriados').textContent = p.message
+        return $('msgs').append(el('div', { className: 'msg warn', textContent: p.message }))
+      }
+      aplicarPlanilha(p)
+      situacaoPlanilha(`Lista da planilha atualizada às ${new Date(p.quando).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}.`)
+    }
+
+    async function carregar() {
+      $('btnSalvar').disabled = true
+      const r = await window.agent.regrasCarregar()
+      if (!r.ok) return msgs([['err', r.message]])
+
+      setoresSel = [...(r.regras.setores || [])].sort()
+      $('tolerancia_min').value = r.regras.geral.tolerancia_min || ''
+      $('tolerancia_min').oninput = marcar
+      for (const k of ['entrada_padrao', 'horario_corte']) {
+        $(k).value = r.regras.geral[k] || ''
+        $(k).classList.remove('invalida')
+        if (!$(k).dataset.ligado) { ligarHora($(k), () => {}); $(k).dataset.ligado = '1' }
+      }
+      for (const nome of Object.keys(TABELAS)) { dados[nome] = r.regras[nome]; render(nome) }
+      aplicarPlanilha(r.cache || { colaboradores: [], feriados: [] })
+      if (!r.cache) $('feriados').textContent = 'Carregando da planilha…'
 
       $('dirty').textContent = ''
-      msgs([
-        ['info', `Salvo em: ${r.arquivo}`],
-        ...r.avisos.map(a => ['warn', a]),
-      ])
+      msgs([['info', `Salvo em: ${r.arquivo}`]])
+      atualizarPlanilha()
     }
 
     $('btnRecarregar').onclick = () => {
@@ -244,7 +329,11 @@
     $('btnSalvar').onclick = async () => {
       const vazia = l => Object.values(l).every(v => !String(v || '').trim())
       const regras = {
-        geral: { entrada_padrao: $('entrada_padrao').value, tolerancia_min: $('tolerancia_min').value, horario_corte: $('horario_corte').value },
+        geral: {
+          entrada_padrao: normalizarHora($('entrada_padrao').value) ?? $('entrada_padrao').value,
+          tolerancia_min: $('tolerancia_min').value,
+          horario_corte: normalizarHora($('horario_corte').value) ?? $('horario_corte').value,
+        },
         setores: setoresSel,
       }
       for (const nome of Object.keys(TABELAS)) regras[nome] = dados[nome].filter(l => !vazia(l))
@@ -259,17 +348,21 @@
       for (const nome of Object.keys(TABELAS)) { dados[nome] = regras[nome]; render(nome) }
       $('dirty').textContent = ''
       window.scrollTo(0, 0)
-      // Salvou sem nada a observar → fecha sozinha. Com aviso (ex.: ADM que não
-      // existe na BASE DE DADOS), fica aberta pra pessoa ler antes de fechar.
+      // Salvou sem nada a observar → volta sozinha pro Início. Com aviso (ex.: ADM
+      // que não existe na BASE DE DADOS), fica aqui pra pessoa ler antes.
       if (!r.avisos.length) {
-        msgs([['ok', 'Salvo. Fechando...']])
-        setTimeout(() => window.close(), 700)
+        msgs([['ok', 'Salvo. Voltando ao início…']])
+        setTimeout(() => window.agent.abrirInicio(), 700)
         return
       }
       msgs([['ok', 'Salvo.'], ['warn', r.avisos.join('\n')]])
-      $('msgs').append(el('button', { textContent: 'Fechar', onclick: () => window.close() }))
+      $('msgs').append(el('button', { className: 'btn pequeno', textContent: 'Voltar ao início', onclick: () => window.agent.abrirInicio() }))
     }
 
+    // Navegação dentro da mesma janela. Com alterações não salvas, o app pergunta antes de sair.
+    $('navInicio').onclick = () => window.agent.abrirInicio()
+    $('navRelatorios').onclick = () => window.agent.abrirRelatorios()
+    $('btnConfig').onclick = () => window.agent.abrirConfig()
     window.addEventListener('beforeunload', e => { if (!$('btnSalvar').disabled) { e.preventDefault(); e.returnValue = '' } })
     carregar()
   </script>

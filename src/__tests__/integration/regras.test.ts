@@ -1,14 +1,75 @@
 // Tela "Horários e regras": arquivo local regras.json, nunca a planilha.
-import { describe, it } from 'node:test'
+import { beforeEach, describe, it } from 'node:test'
 import assert from 'node:assert/strict'
 import fs from 'fs'
-import { carregarConfigLocal, carregarRegras, lerColaboradores, lerRegrasLocais, salvarRegras, validarRegras, type RegrasEditaveis } from '../../regras'
+import path from 'path'
+import {
+  cacheDaPlanilha, carregarConfigLocal, carregarRegras, dadosDaPlanilha, lerColaboradores, lerRegrasLocais, regrasDaTela, salvarRegras, validarRegras,
+  type RegrasEditaveis,
+} from '../../regras'
 import { simular } from '../../service'
 import { caminhoRegrasTeste, cenario, definirRegras, htmlFixture, MemoryGateway, NOITE, preenchidas, regrasCenario } from '../helpers/planilha'
 
 const geralOk = { tolerancia_min: '5', entrada_padrao: '08:00', horario_corte: '18:00' }
 const horario = (o: Partial<RegrasEditaveis['horarios'][number]>) =>
   ({ adm: '1', entrada: '08:00', saida: '', tolerancia_min: '', vigencia_inicio: '', vigencia_fim: '', obs: '', ...o })
+
+const arqCache = () => path.join(process.env['DATA_DIR']!, 'planilha-cache.json')
+beforeEach(() => fs.rmSync(arqCache(), { force: true }))
+
+describe('abertura rápida da tela (regras na hora, planilha depois)', () => {
+  it('regrasDaTela não chama a planilha e já traz a última lista guardada', async () => {
+    const gw = cenario()
+    assert.equal(regrasDaTela().cache, null)
+    await dadosDaPlanilha(gw, '2026-09-29')
+    const chamadasAntes = gw.leituras
+    const r = regrasDaTela()
+    assert.equal(gw.leituras, chamadasAntes)
+    assert.equal(r.regras.geral.entrada_padrao, '08:00')
+    assert.deepEqual(r.cache!.colaboradores.map(c => c.adm), ['9999'])
+    assert.deepEqual(r.cache!.feriados.map(f => [f.aba, f.dias]), [['Setembro', [7]], ['Outubro', [12]]])
+  })
+
+  it('as leituras da planilha vão em paralelo (não uma depois da outra)', async () => {
+    const gw = cenario()
+    let abertas = 0, maximo = 0
+    const lento = <A extends unknown[], R>(fn: (...a: A) => Promise<R>) => async (...a: A) => {
+      abertas++; maximo = Math.max(maximo, abertas)
+      await new Promise(r => setTimeout(r, 30))
+      try { return await fn(...a) } finally { abertas-- }
+    }
+    gw.lerGrid = lento(gw.lerGrid.bind(gw))
+    gw.colunasOcultas = lento(gw.colunasOcultas.bind(gw))
+    await dadosDaPlanilha(gw, '2026-09-29')
+    // BASE DE DADOS + (grade + colunas ocultas) de dois meses = 5 leituras juntas.
+    assert.equal(maximo, 5)
+  })
+
+  it('cache corrompido é ignorado (a tela abre sem lista e busca de novo)', () => {
+    fs.writeFileSync(arqCache(), '{ quebrado')
+    assert.equal(cacheDaPlanilha(), null)
+    fs.writeFileSync(arqCache(), JSON.stringify({ colaboradores: 'x' }))
+    assert.equal(cacheDaPlanilha(), null)
+  })
+
+  it('planilha fora do ar: dadosDaPlanilha falha e o cache antigo continua lá', async () => {
+    const gw = cenario()
+    await dadosDaPlanilha(gw, '2026-09-29')
+    gw.listarAbas = async () => { throw new Error('sem rede') }
+    await assert.rejects(dadosDaPlanilha(gw), /sem rede/)
+    assert.deepEqual(cacheDaPlanilha()!.colaboradores.map(c => c.adm), ['9999'])
+  })
+
+  it('salvar usa a lista em cache pra conferir ADMs, sem ir de novo à planilha', async () => {
+    const gw = cenario()
+    await dadosDaPlanilha(gw, '2026-09-29')
+    gw.listarAbas = async () => { throw new Error('não devia chamar') }
+    gw.lerGrid = async () => { throw new Error('não devia chamar') }
+    const v = await salvarRegras(regrasCenario(), gw)
+    assert.deepEqual(v.erros, [])
+    assert.match(v.avisos.join('\n'), /ADM 76 não existe na BASE DE DADOS/)
+  })
+})
 
 describe('salvar e carregar', () => {
   it('salvam no arquivo local, nunca na planilha, e a simulação passa a usar', async () => {
@@ -176,6 +237,27 @@ describe('validarRegras', () => {
 
   it('exceção com data inexistente bloqueia o salvamento', () => {
     assert.match(v({ excecoes: [{ data: '2026-02-30', adm: '1', entrada_prevista: '09:00', codigo: '', obs: '' }] }).erros.join(), /item 1/)
+  })
+
+  const exc = (o: Partial<RegrasEditaveis['excecoes'][number]>) =>
+    ({ data: '', adm: '1', entrada_prevista: '', codigo: '', obs: '', recorrente: 'sempre', ...o })
+
+  it('exceção permanente: salva sem data; duas entradas ou dois códigos pro mesmo ADM bloqueiam', () => {
+    assert.deepEqual(v({ excecoes: [exc({ entrada_prevista: '09:00' })] }).erros, [])
+    assert.match(v({ excecoes: [exc({ entrada_prevista: '09:00' }), exc({ entrada_prevista: '10:00' })] }).erros.join(), /duas entradas previstas permanentes \(itens 1 e 2\)/)
+    assert.match(v({ excecoes: [exc({ codigo: 'FO' }), exc({ codigo: 'AT' })] }).erros.join(), /dois códigos permanentes/)
+    // Uma com entrada e outra com código pro mesmo ADM pode.
+    assert.deepEqual(v({ excecoes: [exc({ entrada_prevista: '09:00' }), exc({ codigo: 'FO' })] }).erros, [])
+  })
+
+  it('exceção permanente + horário individual pro mesmo ADM → aviso (não bloqueia)', () => {
+    const r = v({ horarios: [horario({ adm: '1' })], excecoes: [exc({ entrada_prevista: '09:00' })] })
+    assert.deepEqual(r.erros, [])
+    assert.match(r.avisos.join(), /vale no lugar do horário individual/)
+  })
+
+  it('exceção permanente vazia (sem entrada nem código) bloqueia', () => {
+    assert.match(v({ excecoes: [exc({})] }).erros.join(), /não muda nada/)
   })
 
   it('campos com espaço sobrando são aceitos', () => {

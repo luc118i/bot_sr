@@ -120,6 +120,14 @@ describe('montarPlano: proteções', () => {
     assert.equal(p.itens.find(i => i.adm === '1')!.situacao, 'ausente_no_ponto')
   })
 
+  it('exceção permanente vale na decisão e aparece no motivo', () => {
+    const c = cfgDe({ excecoes: [['data', 'adm', 'entrada_prevista', 'codigo', 'recorrente'], ['', '1', '09:00', '', 'sempre'], ['', '2', '', 'FO', 'sempre']] })
+    const p = montarPlano(entrada([['1', 'ANA'], ['2', 'BIA']], [reg('ANA', '09:04')], { cfg: c }))
+    assert.deepEqual(p.escritas.map(e => `${e.celula}=${e.codigo}`), ['AH8=.', 'AH9=FO'])
+    assert.match(p.itens.find(i => i.adm === '1')!.horario!.origem, /exceção permanente/)
+    assert.match(p.itens.find(i => i.adm === '2')!.motivo, /exceção permanente.*não aparece no ponto/)
+  })
+
   it('código forçado ganha do ponto (ex.: atestado mesmo tendo batido)', () => {
     const c = cfgDe({ excecoes: [['data', 'adm', 'entrada_prevista', 'codigo'], ['2026-09-28', '1', '', 'AC']] })
     const p = montarPlano(entrada([['1', 'ANA']], [reg('ANA', '09:30')], { cfg: c }))

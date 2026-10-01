@@ -11,7 +11,7 @@ import fs from 'fs'
 import os from 'os'
 import path from 'path'
 import { planilhaDoCenario, sandbox } from '../helpers/appsScriptFalso'
-import { FIXTURE, listaApi, RAIZ_PROJETO, regrasCenario } from '../helpers/planilha'
+import { listaApi, RAIZ_PROJETO, regrasCenario } from '../helpers/planilha'
 
 // ── ambiente isolado ────────────────────────────────────────────────────────
 const DIR = fs.mkdtempSync(path.join(os.tmpdir(), 'freq-e2e-'))
@@ -29,17 +29,23 @@ fs.writeFileSync(process.env['REGRAS_PATH']!, JSON.stringify({ ...regrasCenario(
 const google = sandbox(pl, { TOKEN: 'tok-e2e' })
 const URL_GS = 'https://script.google.com/macros/s/E2E/exec'
 const NOME_XSS = '<img src=x onerror="window.__xss=1">ZE XSS DA SILVA'
-const rede = { pontoComSenhaErrada: false, bloqueadas: [] as string[] }
+const rede = { pontoComSenhaErrada: false, pauloBateuDepois: false, consultasPonto: 0, atrasoGoogleMs: 0, bloqueadas: [] as string[] }
 
 globalThis.fetch = (async (url: string, init: RequestInit = {}) => {
   const u = String(url)
-  if (u === URL_GS) return new Response(JSON.stringify(google.post(JSON.parse(String(init.body)))))
+  if (u === URL_GS) {
+    if (rede.atrasoGoogleMs) await new Promise(r => setTimeout(r, rede.atrasoGoogleMs))
+    return new Response(JSON.stringify(google.post(JSON.parse(String(init.body)))))
+  }
   if (u.startsWith('https://pontowebapp.secullum.com.br/123/')) {
     if (u.endsWith('/Login/VerificarBancoValido/')) return new Response('true')
     if (rede.pontoComSenhaErrada) return new Response('', { status: 401 })
     if (u.endsWith('/Login')) return new Response('{}')
+    rede.consultasPonto++
+    // pauloBateuDepois: o ponto do PAULO aparece depois (ajuste no relógio) — o "Revisar" tem que pegar.
+    const lista = listaApi().map(l => (rede.pauloBateuDepois && l.funcionarioNome === 'PAULO MODELO DA SILVA' ? { ...l, batidas: [{ valor: '07:50' }] } : l))
     return new Response(JSON.stringify({
-      lista: [...listaApi(), { funcionarioNome: NOME_XSS, data: '', batidas: [{ valor: '08:00' }], situacao: 0 }],
+      lista: [...lista, { funcionarioNome: NOME_XSS, data: '', batidas: [{ valor: '08:00' }], situacao: 0 }],
     }))
   }
   rede.bloqueadas.push(u)
@@ -120,13 +126,14 @@ async function roteiro() {
 
   await passo('abre pronta: status "Pronto · ponto e planilha"', async () => {
     await esperar('status pronto', async () => /Pronto · ponto e planilha/.test(await textoDe(wc, '#status')))
+    igual(await js(wc, `[!!document.querySelector('details.avancado'), /Avançado/.test(document.body.innerText)]`), [false, false], '[seção Avançado, texto "Avançado"]')
   })
 
   await passo('simular um dia: mostra o que seria gravado e NÃO grava', async () => {
     await escolherDia('2026-09-28', true)
     await js(wc, `document.querySelector('#chips [data-cmd="dia"]').click()`)
     await esperar('resposta da simulação', async () => /Simulação\./.test(await resposta()))
-    igual(['AH8', 'AH9', 'AH10', 'AH16'].map(c => celula('Setembro', c)), ['', '', '', ''], 'planilha depois de simular')
+    igual(['AH8', 'AH9', 'AH10', 'AH16', 'AH13'].map(c => celula('Setembro', c)), ['', '', '', '', ''], 'planilha depois de simular')
     await esperar('botão Gravar agora (4)', () => js(wc, `[...document.querySelectorAll('#resposta button')].some(b => b.textContent === 'Gravar agora (4)')`))
     await foto(w, '1-simulacao')
   })
@@ -144,7 +151,7 @@ async function roteiro() {
       .observe(document.getElementById('status'), { childList: true, subtree: true, characterData: true }); true`)
     await clicarTexto(wc, '#resposta button', /^Gravar agora/)
     await esperar('toast de gravação', async () => /4 células gravadas/.test(await textoDe(wc, '#toast')))
-    igual(['AH8', 'AH9', 'AH10', 'AH16', 'AH11', 'AH12', 'AH14'].map(c => celula('Setembro', c)), ['.', '.', 'P', 'AT', '', 'FE', 'FO'], 'planilha depois de gravar')
+    igual(['AH8', 'AH9', 'AH10', 'AH16', 'AH13', 'AH11', 'AH12', 'AH14'].map(c => celula('Setembro', c)), ['.', '.', 'P', 'AT', '', '', 'FE', 'FO'], 'planilha depois de gravar')
     const rotulos: string[] = await js(wc, 'window.__rotulos')
     if (rotulos.some(r => /Simulando/.test(r))) throw new Error(`status disse "Simulando…" durante a gravação: ${JSON.stringify(rotulos)}`)
     if (!rotulos.some(r => /Gravando/.test(r))) throw new Error(`status não disse "Gravando…": ${JSON.stringify(rotulos)}`)
@@ -171,12 +178,26 @@ async function roteiro() {
     await esperar('PAULO de volta às pendências', () => js(wc, `!!document.querySelector('select[aria-label="Justificar PAULO MODELO DA SILVA"]')`))
   })
 
-  await passo('reabrir a tela traz de volta o último resultado e o histórico', async () => {
+  await passo('reabrir: sem cartão "Última conferência"; pendências, detalhes e histórico voltam', async () => {
     wc.reload()
     await esperar('recarregou', () => js(wc, `document.readyState === 'complete' && !!window.agent`))
     await prepararTela()
-    await esperar('último resultado restaurado', async () => /Última (conferência|simulação)/.test(await resposta()))
+    await esperar('pendências restauradas', async () => /1 pessoa sem ponto/.test(await textoDe(wc, '#atencao')))
     await esperar('histórico', async () => /preenchido · 4 células/.test(await textoDe(wc, '#atividade')))
+    igual(await js(wc, `[document.getElementById('resposta').hidden, document.getElementById('detalhes').hidden]`), [true, false], '[cartão de resposta oculto, detalhes oculto]')
+    if (/Última (conferência|simulação)/.test(await textoDe(wc, 'main'))) throw new Error('o cartão "Última conferência" ainda aparece')
+  })
+
+  await passo('"Revisar" roda o bot de novo: o ponto que chegou depois é gravado e abre o que ainda falta', async () => {
+    rede.pauloBateuDepois = true
+    try {
+      const antes = rede.consultasPonto
+      await js(wc, `[...document.querySelectorAll('#atencao a')].find(a => a.textContent === 'Revisar').click()`)
+      await esperar('bot rodou de novo', async () => rede.consultasPonto > antes && /Pronto\. Conferi 1 dia e preenchi 1 célula/.test(await resposta()))
+      igual(celula('Setembro', 'AH11'), '.', 'AH11 (PAULO bateu às 07:50)')
+      await esperar('pendências abertas', () => js(wc, `!document.getElementById('detalhes').hidden && [...document.querySelectorAll('#detalhesDias details')].some(d => d.open && d.querySelector('.aba[data-k="pendencias"][aria-selected="true"]'))`))
+      if (/1 pessoa sem ponto/.test(await textoDe(wc, '#atencao'))) throw new Error('PAULO continuou como "sem ponto"')
+    } finally { rede.pauloBateuDepois = false }
   })
 
   await passo('senha do ponto errada: mensagem clara + atalho pras Configurações, tela destrava', async () => {
@@ -205,64 +226,97 @@ async function roteiro() {
     }
   })
 
-  await passo('"Conferir arquivos" (avançado) lê o HTML salvo do ponto', async () => {
-    escolhaArquivos = [FIXTURE]
-    await js(wc, `document.getElementById('btnHtml').click()`)
-    // textContent: o nome fica dentro do <details> "Avançado", fechado (innerText vem vazio).
-    await esperar('arquivo escolhido', async () => /ponto-sintetico\.html/.test(await js(wc, `document.getElementById('htmlName').textContent`)))
-    await js(wc, `document.getElementById('btnSim').click()`)
-    await esperar('simulação do arquivo', async () => /Conferir arquivos do ponto[\s\S]*Simulação\./.test(await resposta()))
-    escolhaArquivos = []
-  })
-
-  await passo('"Desfazer escrita anterior" pelo relatório apaga o que o bot gravou em 28/09', async () => {
+  await passo('"desfazer" no campo de comando desfaz uma escrita antiga pelo relatório (28/09)', async () => {
     const rel = path.join(USERDATA, 'relatorios')
     const arq = fs.readdirSync(rel).find(f => /^2026-09-28_escrita_.*\.json$/.test(f))
     if (!arq) throw new Error('relatório da escrita de 28/09 não foi salvo')
     escolhaArquivos = [path.join(rel, arq)]
-    await js(wc, `document.getElementById('btnDesfazerAnt').click()`)
+    await js(wc, `(() => { document.getElementById('cmd').value = 'desfazer escrita anterior'; document.getElementById('formCmd').requestSubmit(); return true })()`)
     await esperar('desfeito', async () => /Desfeito\. Apaguei 4 células/.test(await resposta()))
-    igual(['AH8', 'AH9', 'AH10', 'AH16', 'AH12', 'AH14'].map(c => celula('Setembro', c)), ['', '', '', '', 'FE', 'FO'], 'só o que o bot gravou foi apagado')
+    igual(['AH8', 'AH9', 'AH10', 'AH16', 'AH13', 'AH12', 'AH14'].map(c => celula('Setembro', c)), ['', '', '', '', '', 'FE', 'FO'], 'só o que o bot gravou foi apagado')
     escolhaArquivos = []
   })
 
-  await passo('tela "Horários e regras": carrega, lista colaboradores e salva no arquivo local', async () => {
-    await js(wc, `window.agent.abrirRegras()`)
-    const r = await janela('regras.html')
-    const rc = r.webContents
-    await esperar('regras carregadas', () => js(rc, `document.getElementById('entrada_padrao').value === '08:00'`))
-    await esperar('colaboradores da BASE', () => js(rc, `[...document.querySelectorAll('#colabs option')].some(o => /FELIPE SEMLINHA/.test(o.value + o.label + o.textContent))`))
-    await foto(r, '4-regras')
-    await js(rc, `(() => { const t = document.getElementById('tolerancia_min'); t.value = '7'; t.dispatchEvent(new Event('input', { bubbles: true })); t.dispatchEvent(new Event('change', { bubbles: true })); return true })()`)
-    await esperar('Salvar habilitado', () => js(rc, `!document.getElementById('btnSalvar').disabled`))
-    await js(rc, `document.getElementById('btnSalvar').click()`)
-    await esperar('regras gravadas', () => JSON.parse(fs.readFileSync(process.env['REGRAS_PATH']!, 'utf-8')).geral.tolerancia_min === '7')
-    // Os ADMs do cenário não estão na BASE DE DADOS → salva, avisa e fica aberta pra ler.
-    await esperar('aviso de ADM fora da BASE', async () => r.isDestroyed() || /Salvo\.[\s\S]*ADM 76 não existe/.test(await textoDe(rc, '#msgs')))
-    if (!r.isDestroyed()) r.destroy()
+  const naTela = (arquivo: string) => esperar(`tela ${arquivo}`, async () =>
+    wc.getURL().endsWith(`/${arquivo}`) && await js(wc, `document.readyState === 'complete' && !!window.agent`))
+
+  await passo('"Horários e regras" abre na MESMA janela; regras aparecem antes da planilha responder', async () => {
+    rede.atrasoGoogleMs = 3000 // Google lento: as regras (arquivo local) não podem esperar por ele
+    try {
+      await js(wc, `document.getElementById('navRegras').click()`)
+      await naTela('regras.html')
+      const t0 = Date.now()
+      await esperar('regras na tela', () => js(wc, `document.getElementById('entrada_padrao').value === '08:00'`), 2500)
+      if (Date.now() - t0 > 2000) throw new Error('as regras esperaram a planilha')
+      igual(BrowserWindow.getAllWindows().length, 1, 'janelas abertas')
+      await esperar('lista da planilha chega depois', () => js(wc, `[...document.querySelectorAll('#colabs option')].some(o => /FELIPE SEMLINHA/.test(o.value))`), 10_000)
+      await esperar('aviso de lista atualizada', async () => /Lista da planilha atualizada/.test(await textoDe(wc, '#planilhaEstado')))
+    } finally { rede.atrasoGoogleMs = 0 }
+    await foto(w, '4-regras')
   })
 
-  await passo('tela "Configurações": mostra a config, testa planilha e ponto', async () => {
-    await js(wc, `window.agent.abrirConfig()`)
-    const c = await janela('config.html')
-    const cc = c.webContents
-    await esperar('config carregada', () => js(cc, `document.getElementById('asUrl').value === ${JSON.stringify(URL_GS)}`))
-    await js(cc, `document.getElementById('btnTest').click()`)
-    await esperar('teste da planilha', async () => /Conectado a "\[SR\] - Frequência logística 2026" \(3 abas\)/.test(await textoDe(cc, '#msg')))
-    await js(cc, `document.getElementById('btnTestarPonto').click()`)
-    await esperar('teste do ponto', async () => /Login ok — 7 colaborador/.test(await textoDe(cc, '#msgPonto')))
-    await foto(c, '5-configuracoes')
-    c.destroy()
+  await passo('exceção permanente cadastrada na tela é salva e vale na conferência', async () => {
+    await js(wc, `(() => {
+      document.querySelector('#t-excecoes button.add').click()
+      const linha = document.querySelector('#t-excecoes tbody tr:last-child')
+      const quando = linha.querySelector('select.quando'); quando.value = 'sempre'; quando.dispatchEvent(new Event('change'))
+      return true })()`)
+    await esperar('linha virou "todo dia"', async () => /todo dia/.test(await textoDe(wc, '#t-excecoes tbody tr:last-child')))
+    await js(wc, `(() => {
+      const linha = document.querySelector('#t-excecoes tbody tr:last-child')
+      const [colab, entrada] = [linha.querySelector('input[list="colabs"]'), linha.querySelector('input.hora')]
+      colab.value = '374'; colab.dispatchEvent(new Event('input'))
+      // Digitar só "9" basta: vira 09:00 ao sair do campo.
+      entrada.focus(); entrada.value = '9'; entrada.dispatchEvent(new Event('input')); entrada.blur()
+      document.getElementById('t-excecoes').scrollIntoView({ block: 'center' }); return true })()`)
+    igual(await js(wc, `document.querySelector('#t-excecoes tbody tr:last-child input.hora').value`), '09:00', 'hora mostrada depois de digitar "9"')
+    const variacoes: Record<string, string | null> = { '9': '09:00', '9h': '09:00', '9h30': '09:30', '930': '09:30', '0930': '09:30', '9:30': '09:30', '9.30': '09:30', '17:45': '17:45', ' 8 ': '08:00', '24': null, '9h75': null, 'abc': null, '': '' }
+    igual(await js(wc, `(${JSON.stringify(Object.keys(variacoes))}).map(normalizarHora)`), Object.values(variacoes), 'normalização das horas digitadas')
+    await foto(w, '4b-excecao-permanente')
+    await js(wc, `document.getElementById('btnSalvar').click()`)
+    const salva = await esperar('regras gravadas', () => {
+      const r = JSON.parse(fs.readFileSync(process.env['REGRAS_PATH']!, 'utf-8'))
+      return r.excecoes.find((e: any) => e.adm === '374' && e.recorrente === 'sempre')
+    })
+    igual([salva.data, salva.entrada_prevista], ['', '09:00'], '[data, entrada] da exceção permanente')
+    // Os ADMs do cenário não estão na BASE DE DADOS → salva, avisa e fica na tela pra ler.
+    await esperar('aviso de ADM fora da BASE', async () => /Salvo\.[\s\S]*ADM 76 não existe/.test(await textoDe(wc, '#msgs')))
+    await js(wc, `[...document.querySelectorAll('#msgs button')].find(b => b.textContent === 'Voltar ao início').click()`)
+    await naTela('app.html')
+    await prepararTela()
+
+    await escolherDia('2026-09-25', true)
+    await js(wc, `document.querySelector('#chips [data-cmd="dia"]').click()`)
+    await esperar('simulação de 25/09', async () => /Simulação\./.test(await resposta()))
+    const linhaJoao = await js<string>(wc, `(() => {
+      document.querySelectorAll('#detalhesDias details').forEach(d => d.open = true)
+      document.querySelectorAll('.aba[data-k="preenchidos"]').forEach(b => b.click())
+      return [...document.querySelectorAll('#detalhesDias tr')].map(r => r.innerText).find(t => /JOAO EXEMPLO/.test(t)) || '' })()`)
+    if (!/09:00/.test(linhaJoao)) throw new Error(`JOAO deveria ter 09:00 previsto pela exceção permanente: "${linhaJoao}"`)
+  })
+
+  await passo('"Configurações" abre na MESMA janela, testa planilha e ponto, e Voltar retorna ao início', async () => {
+    await js(wc, `document.getElementById('btnConfig').click()`)
+    await naTela('config.html')
+    igual(BrowserWindow.getAllWindows().length, 1, 'janelas abertas')
+    await esperar('config carregada', () => js(wc, `document.getElementById('asUrl').value === ${JSON.stringify(URL_GS)}`))
+    await js(wc, `document.getElementById('btnTest').click()`)
+    await esperar('teste da planilha', async () => /Conectado a "\[SR\] - Frequência logística 2026" \(3 abas\)/.test(await textoDe(wc, '#msg')))
+    await js(wc, `document.getElementById('btnTestarPonto').click()`)
+    await esperar('teste do ponto', async () => /Login ok — 7 colaborador/.test(await textoDe(wc, '#msgPonto')))
+    await foto(w, '5-configuracoes')
+    await js(wc, `document.getElementById('btnFechar').click()`)
+    await naTela('app.html')
+    await prepararTela()
+  })
+
+  await passo('a janela única está maximizada e nunca abriu outra', async () => {
+    igual([BrowserWindow.getAllWindows().length, w.isMaximized()], [1, true], '[janelas, maximizada]')
   })
 
   await passo('config.json no disco: senha e token cifrados (não em texto puro)', async () => {
     const disco = fs.readFileSync(path.join(USERDATA, 'config.json'), 'utf-8')
     if (/senha-e2e|tok-e2e/.test(disco)) throw new Error('segredo em texto puro no config.json')
-  })
-
-  await passo('IPC "simular" recusa arquivo que não veio do seletor (ex.: C:\\Windows\\win.ini)', async () => {
-    const r = await js(wc, `window.agent.simular({ htmlPaths: ['C:\\\\Windows\\\\win.ini'] })`)
-    igual([r.ok, /Selecionar HTML/.test(r.message)], [false, true], 'resposta da IPC')
   })
 
   // Por último: derruba um handler, como quando a tela é mais nova que o app aberto.

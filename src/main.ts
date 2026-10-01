@@ -10,16 +10,14 @@ import type { Plano } from './core/planner'
 import { extrairSpreadsheetId } from './sheets/googleSheets'
 import {
   abrirGateway, desfazerEscrita, executarEscritaLote, gatewayDaConfig, justificar, lerConferencias, lerUltimoResultado, listarHistorico, preencherAutomatico,
-  registrarConferencias, registrarFeriados, reverterJustificativas, salvarRelatorio, salvarUltimoResultado, semanaDe, simularLote,
+  registrarConferencias, registrarFeriados, reverterJustificativas, salvarRelatorio, salvarUltimoResultado, semanaDe,
   type EscritaDoDia, type Lote, type ResultadoDesfazer, type ResultadoEscrita,
 } from './service'
-import { carregarRegras, lerRegrasLocais, salvarRegras, type RegrasEditaveis } from './regras'
+import { dadosDaPlanilha, lerRegrasLocais, regrasDaTela, salvarRegras, type RegrasEditaveis } from './regras'
 import type { SheetGateway } from './sheets/gateway'
 
 let tray: Tray | null = null
-let configWin: BrowserWindow | null = null
 let appWin: BrowserWindow | null = null
-let regrasWin: BrowserWindow | null = null
 
 // Última simulação (1 ou vários dias) na janela principal. "Escrever" só grava
 // ESTES planos — o operador aprova exatamente o que viu, nunca uma nova leitura.
@@ -31,8 +29,6 @@ const VALIDADE_PLANO_MS = 60 * 60 * 1000
 // pelo relatório .json de cada dia, salvo em relatorios/.
 let ultimaEscrita: EscritaDoDia[] | null = null
 
-// HTMLs do ponto que o operador escolheu no seletor — os únicos que 'simular' lê.
-const htmlsEscolhidos = new Set<string>()
 
 // Planos do último resultado mostrado na tela (gravado ou simulado). A
 // justificativa só aceita células que estavam pendentes NESTES planos.
@@ -114,54 +110,49 @@ function ensureDir(d: string): string {
   return d
 }
 
-function openConfigWindow(): void {
-  if (configWin && !configWin.isDestroyed()) { configWin.focus(); return }
-  configWin = new BrowserWindow({
-    width: 640,
-    height: 780,
-    minWidth: 520,
-    minHeight: 600,
-    backgroundColor: '#F4F4F2',
-    resizable: true,
-    title: 'SR_dados — Configurações',
-    autoHideMenuBar: true,
-    webPreferences: { preload: preloadPath(), contextIsolation: true, nodeIntegration: false },
-  })
-  configWin.loadFile(rendererPath('config.html'))
-  configWin.on('closed', () => { configWin = null })
-}
+// Uma janela só, maximizada: Início, Horários e regras e Configurações são
+// telas que se revezam dentro dela (o estado do Início fica aqui no processo
+// principal e volta quando a tela reabre).
+type Tela = 'app.html' | 'regras.html' | 'config.html'
 
-function openAppWindow(): void {
-  if (appWin && !appWin.isDestroyed()) { appWin.focus(); return }
-  appWin = new BrowserWindow({
+function criarJanela(): BrowserWindow {
+  const w = new BrowserWindow({
     width: 1280,
     height: 900,
     minWidth: 720,
     minHeight: 600,
+    show: false,
     backgroundColor: '#F4F4F2',
     title: 'SR_dados',
     autoHideMenuBar: true,
     webPreferences: { preload: preloadPath(), contextIsolation: true, nodeIntegration: false },
   })
-  appWin.loadFile(rendererPath('app.html'))
-  appWin.on('closed', () => { appWin = null; ultimoLote = null; ultimaEscrita = null; planosNaTela = new Map(); loteNaTela = null })
+  w.once('ready-to-show', () => { w.maximize(); w.show() })
+  // Tela com alterações não salvas pede pra ficar (beforeunload): pergunta antes de trocar.
+  w.webContents.on('will-prevent-unload', ev => {
+    const r = dialog.showMessageBoxSync(w, {
+      type: 'question', buttons: ['Sair sem salvar', 'Continuar editando'], defaultId: 1, cancelId: 1,
+      title: 'Alterações não salvas', message: 'Há alterações não salvas nesta tela.', detail: 'Se sair agora, elas serão perdidas.',
+    })
+    if (r === 0) ev.preventDefault()
+  })
+  w.on('closed', () => { appWin = null; ultimoLote = null; ultimaEscrita = null; planosNaTela = new Map(); loteNaTela = null })
+  return w
 }
 
-function openRegrasWindow(): void {
-  if (regrasWin && !regrasWin.isDestroyed()) { regrasWin.focus(); return }
-  regrasWin = new BrowserWindow({
-    width: 1040,
-    height: 820,
-    minWidth: 720,
-    minHeight: 560,
-    backgroundColor: '#F4F4F2',
-    title: 'SR_dados — Horários e regras',
-    autoHideMenuBar: true,
-    webPreferences: { preload: preloadPath(), contextIsolation: true, nodeIntegration: false },
-  })
-  regrasWin.loadFile(rendererPath('regras.html'))
-  regrasWin.on('closed', () => { regrasWin = null })
+function mostrarTela(tela: Tela): void {
+  if (!appWin || appWin.isDestroyed()) appWin = criarJanela()
+  else {
+    if (appWin.isMinimized()) appWin.restore()
+    appWin.show()
+    appWin.focus()
+  }
+  if (!appWin.webContents.getURL().endsWith(`/${tela}`)) appWin.loadFile(rendererPath(tela))
 }
+
+const openAppWindow = () => mostrarTela('app.html')
+const openRegrasWindow = () => mostrarTela('regras.html')
+const openConfigWindow = () => mostrarTela('config.html')
 
 // Planilha se estiver configurada; null se ainda não (tela de regras funciona sem).
 function gatewayOpcional(): SheetGateway | null {
@@ -226,7 +217,7 @@ function registerIPC(): void {
   ipcMain.handle('save-config', (_e, cfg: AgentConfig) => saveConfig(cfg))
 
   ipcMain.handle('pick-json-file', async () => {
-    const result = await dialog.showOpenDialog(configWin!, {
+    const result = await dialog.showOpenDialog(appWin!, {
       title: 'Selecionar Service Account JSON',
       filters: [{ name: 'JSON', extensions: ['json'] }],
       properties: ['openFile'],
@@ -250,36 +241,7 @@ function registerIPC(): void {
   })
 
 
-  // Vários arquivos de uma vez (um por dia) — a data de cada um vem do HTML.
-  ipcMain.handle('pick-html-files', async () => {
-    const result = await dialog.showOpenDialog(appWin!, {
-      title: 'Selecionar o HTML de cada dia (pode escolher vários)',
-      filters: [{ name: 'HTML', extensions: ['html', 'htm'] }],
-      properties: ['openFile', 'multiSelections'],
-    })
-    if (result.canceled || !result.filePaths.length) return null
-    for (const p of result.filePaths) htmlsEscolhidos.add(p)
-    return result.filePaths.map(p => ({ path: p, name: path.basename(p) }))
-  })
-
-  ipcMain.handle('simular', async (_e, params: { htmlPaths: string[]; forcar?: boolean }) => {
-    // Só lê arquivos que ESTA sessão ofereceu pelo seletor — a tela não escolhe caminhos livres.
-    if (!Array.isArray(params?.htmlPaths) || params.htmlPaths.some(p => !htmlsEscolhidos.has(p))) {
-      return { ok: false, message: 'Escolha os arquivos HTML pelo botão "Selecionar HTML…".' }
-    }
-    ultimoLote = null
-    try {
-      const htmls = params.htmlPaths.map(p => ({ arquivo: path.basename(p), html: fs.readFileSync(p, 'utf-8') }))
-      const lote = await simularLote(abrirGateway(), { htmls, forcar: !!params.forcar })
-      ultimoLote = lote
-      mostrarNaTela(lote, 'simulacao')
-      for (const plano of lote.planos) salvarRelatorio(plano, 'simulacao')
-      return { ok: true, lote }
-    } catch (err: any) {
-      logger.error('[simular]', err.message)
-      return { ok: false, message: err.message ?? 'Erro desconhecido' }
-    }
-  })
+  // (Conferir a partir de HTML salvo do ponto saiu do app — continua na CLI: node dist/cli.js simular --html.)
 
   ipcMain.handle('escrever', async () => {
     const lote = ultimoLote
@@ -431,14 +393,25 @@ function registerIPC(): void {
 
   ipcMain.handle('abrir-regras', () => openRegrasWindow())
   ipcMain.handle('abrir-config', () => openConfigWindow())
+  ipcMain.handle('abrir-inicio', () => openAppWindow())
 
-  // Regras vêm do arquivo local; a planilha (se configurada) só alimenta a
-  // lista de colaboradores e os feriados — sem ela a tela abre do mesmo jeito.
-  ipcMain.handle('regras-carregar', async () => {
+  // Regras vêm do arquivo local (instantâneo, junto com a última lista da
+  // planilha guardada em disco); a lista fresca vem depois, por 'regras-planilha'.
+  ipcMain.handle('regras-carregar', () => {
     try {
-      return { ok: true, ...(await carregarRegras(gatewayOpcional())) }
+      return { ok: true, ...regrasDaTela() }
     } catch (err: any) {
       return { ok: false, message: err.message ?? 'Erro desconhecido' }
+    }
+  })
+
+  ipcMain.handle('regras-planilha', async () => {
+    const gw = gatewayOpcional()
+    if (!gw) return { ok: false, message: 'Planilha não conectada — configure a conexão para ver colaboradores e feriados.' }
+    try {
+      return { ok: true, ...(await dadosDaPlanilha(gw)) }
+    } catch (err: any) {
+      return { ok: false, message: `Não deu pra ler a planilha (lista de colaboradores e feriados): ${err.message}` }
     }
   })
 
@@ -474,5 +447,8 @@ app.whenReady().then(() => {
   else openAppWindow()
 })
 
-app.on('second-instance', () => openAppWindow())
+// Segundo clique no atalho: traz a janela pra frente, na tela em que estava.
+app.on('second-instance', () => {
+  if (appWin && !appWin.isDestroyed()) { if (appWin.isMinimized()) appWin.restore(); appWin.show(); appWin.focus() } else openAppWindow()
+})
 app.on('window-all-closed', () => { /* mantém vivo — só sai pelo tray */ })

@@ -33,8 +33,9 @@ function doPost(e) {
     const acao = Object.prototype.hasOwnProperty.call(ACOES_, req.acao) ? ACOES_[req.acao] : null
     if (!acao) return resposta_({ ok: false, erro: 'Ação desconhecida: ' + req.acao })
 
-    // Uma operação por vez — duas máquinas rodando o bot ao mesmo tempo não
-    // se atropelam.
+    // Leitura não precisa de fila — várias ao mesmo tempo deixam a tela do bot
+    // rápida. Gravar/limpar: uma por vez, pra duas máquinas não se atropelarem.
+    if (!ESCRITAS_[req.acao]) return resposta_({ ok: true, dados: acao(planilha_(), req) })
     const lock = LockService.getScriptLock()
     lock.waitLock(30000)
     try {
@@ -65,6 +66,8 @@ function autorizar() {
     ? 'TOKEN configurado (' + token.length + ' caracteres). Confira se é o mesmo das Configurações do bot.'
     : 'FALTA o TOKEN: Configurações do projeto → Propriedades do script → adicionar TOKEN = token gerado no bot.')
 }
+
+const ESCRITAS_ = { escrever: true, limpar: true }
 
 const ACOES_ = {
   info: function (ss) {

@@ -98,8 +98,38 @@ export function carregarConfigLocal(overrides?: OverridesGeral): ConfigPlanilha 
 // oculta. Só leitura na tela — pra cadastrar um feriado, esconda a coluna.
 export interface FeriadosDoMes { aba: string; dias: number[]; erro: string | null }
 
-// As regras vêm do arquivo local; colaboradores e feriados, da planilha (só
-// leitura). Se a planilha não responder, a tela abre do mesmo jeito.
+// A tela abre em dois tempos, pra não esperar o Google:
+//   1. regrasDaTela(): arquivo local + a última lista da planilha guardada em
+//      disco (planilha-cache.json) — instantâneo;
+//   2. dadosDaPlanilha(): colaboradores e feriados frescos, com as leituras em
+//      paralelo; atualiza o cache e a tela troca as listas quando chegar.
+export interface DadosDaPlanilha { colaboradores: Colaborador[]; feriados: FeriadosDoMes[]; quando: string }
+
+const arqCache = () => path.join(getDataDir(), 'planilha-cache.json')
+
+export function cacheDaPlanilha(): DadosDaPlanilha | null {
+  try {
+    const c = JSON.parse(fs.readFileSync(arqCache(), 'utf-8')) as DadosDaPlanilha
+    return Array.isArray(c.colaboradores) && Array.isArray(c.feriados) ? c : null
+  } catch { return null }
+}
+
+export function regrasDaTela(): { regras: RegrasEditaveis; arquivo: string; cache: DadosDaPlanilha | null } {
+  return { regras: lerRegrasLocais() ?? regrasVazias(), arquivo: caminhoRegras(), cache: cacheDaPlanilha() }
+}
+
+export async function dadosDaPlanilha(gw: SheetGateway, hoje: string = hojeISO()): Promise<DadosDaPlanilha> {
+  const abas = await gw.listarAbas()
+  const [colaboradores, feriados] = await Promise.all([lerColaboradores(gw, abas), lerFeriados(gw, abas, hoje)])
+  const dados = { colaboradores, feriados, quando: new Date().toISOString() }
+  try {
+    fs.mkdirSync(path.dirname(arqCache()), { recursive: true })
+    fs.writeFileSync(arqCache(), JSON.stringify(dados), 'utf-8')
+  } catch (err: any) { logger.warn(`[regras] não deu pra guardar o cache da planilha: ${err.message}`) }
+  return dados
+}
+
+// Tudo de uma vez (CLI e testes). Se a planilha não responder, vem sem as listas.
 export async function carregarRegras(gw: SheetGateway | null, hoje: string = hojeISO()): Promise<{
   regras: RegrasEditaveis
   arquivo: string
@@ -107,38 +137,37 @@ export async function carregarRegras(gw: SheetGateway | null, hoje: string = hoj
   feriados: FeriadosDoMes[]
   avisos: string[]
 }> {
+  const { regras, arquivo } = regrasDaTela()
   const avisos: string[] = []
   let colaboradores: Colaborador[] = []
   let feriados: FeriadosDoMes[] = []
   if (gw) {
     try {
-      const abas = await gw.listarAbas()
-      colaboradores = await lerColaboradores(gw, abas)
-      feriados = await lerFeriados(gw, abas, hoje)
+      ({ colaboradores, feriados } = await dadosDaPlanilha(gw, hoje))
     } catch (err: any) {
       avisos.push(`Não deu pra ler a planilha (lista de colaboradores e feriados indisponíveis): ${err.message}`)
     }
   }
-  return { regras: lerRegrasLocais() ?? regrasVazias(), arquivo: caminhoRegras(), colaboradores, feriados, avisos }
+  return { regras, arquivo, colaboradores, feriados, avisos }
 }
 
-// Mês atual e o seguinte — o suficiente pra conferir a semana que vem.
+// Mês atual e o seguinte — o suficiente pra conferir a semana que vem. As
+// leituras (grade e colunas ocultas de cada mês) vão juntas.
 async function lerFeriados(gw: SheetGateway, abas: string[], hoje: string): Promise<FeriadosDoMes[]> {
   const { ano, mes } = parseDataISO(hoje)
   const alvos = [{ ano, mes }, mes === 12 ? { ano: ano + 1, mes: 1 } : { ano, mes: mes + 1 }]
-  const out: FeriadosDoMes[] = []
-  for (const a of alvos) {
+  return Promise.all(alvos.map(async (a): Promise<FeriadosDoMes> => {
     let aba = MESES[a.mes - 1]!
     try {
       aba = nomeAbaDoMes(abas, a.mes)
-      const layout = detectarLayout(aba, (await gw.lerGrid(aba)) ?? [], a.ano, a.mes, await gw.colunasOcultas(aba))
+      const [grid, ocultas] = await Promise.all([gw.lerGrid(aba), gw.colunasOcultas(aba)])
+      const layout = detectarLayout(aba, grid ?? [], a.ano, a.mes, ocultas)
       const dias = [...layout.diasNaoUteis].filter(([, motivo]) => motivo === 'coluna oculta').map(([d]) => d).sort((x, y) => x - y)
-      out.push({ aba, dias, erro: null })
+      return { aba, dias, erro: null }
     } catch (err: any) {
-      out.push({ aba, dias: [], erro: err.message })
+      return { aba, dias: [], erro: err.message }
     }
-  }
-  return out
+  }))
 }
 
 // BASE DE DADOS: ADM, Colaborador, Locação (setor), Status de Atividade.
@@ -180,6 +209,21 @@ export function validarRegras(r: RegrasEditaveis, colaboradores: Colaborador[]):
         if (sobrepoe) erros.push(`ADM ${adm}: dois horários individuais valendo ao mesmo tempo (itens ${a.item} e ${b.item}) — ajuste as vigências.`)
       }
     }
+
+    // Exceções permanentes: no máximo uma entrada e um código por pessoa.
+    const permanentes = cfg.excecoes.filter(e => e.sempre)
+    for (const [campo, rotulo] of [['entradaPrevistaMin', 'duas entradas previstas permanentes'], ['codigoForcado', 'dois códigos permanentes']] as const) {
+      const porAdmExc = new Map<string, number[]>()
+      for (const e of permanentes) if (e[campo] !== null) porAdmExc.set(e.adm, [...(porAdmExc.get(e.adm) ?? []), e.item])
+      for (const [adm, itens] of porAdmExc) {
+        if (itens.length > 1) erros.push(`ADM ${adm}: ${rotulo} (itens ${itens.join(' e ')}) — deixe só um.`)
+      }
+    }
+    for (const e of permanentes) {
+      if (e.entradaPrevistaMin !== null && porAdm.has(e.adm)) {
+        avisos.push(`ADM ${e.adm}: a exceção permanente (item ${e.item}) vale no lugar do horário individual — se for o mesmo combinado, basta um dos dois.`)
+      }
+    }
   } catch (err: any) {
     erros.push(err.message)
   }
@@ -197,8 +241,9 @@ export function validarRegras(r: RegrasEditaveis, colaboradores: Colaborador[]):
 // Valida e grava no arquivo local. A planilha só é consultada (se der) pra
 // avisar de ADM que não existe na BASE DE DADOS.
 export async function salvarRegras(r: RegrasEditaveis, gw: SheetGateway | null): Promise<ResultadoValidacao> {
-  let colaboradores: Colaborador[] = []
-  if (gw) {
+  // A lista que a tela acabou de mostrar (cache) basta pra conferir ADMs — sem nova ida ao Google.
+  let colaboradores: Colaborador[] = cacheDaPlanilha()?.colaboradores ?? []
+  if (!colaboradores.length && gw) {
     try { colaboradores = await lerColaboradores(gw) } catch { /* sem planilha: salva sem conferir ADMs */ }
   }
   const v = validarRegras(r, colaboradores)

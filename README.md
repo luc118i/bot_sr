@@ -73,13 +73,15 @@ node dist/cli.js desfazer --escrita relatorios/<data>_escrita_<hora>.json
    **Service Account** (JSON). Ver "Conectar via Apps Script" abaixo.
 2. Nas **Configurações** do app: escolha a conexão, preencha → "Testar conexão".
 3. Em **Horários e regras** (bandeja ou botão na tela principal): entrada padrão, tolerância,
-   horário de corte, horários individuais (com vigência), exceções de um dia e apelidos.
+   horário de corte, horários individuais (com vigência), exceções (só num dia ou **sempre,
+   até remover** — ex.: entra às 9h combinado com o gestor) e apelidos. A tela abre na hora
+   com o arquivo local e a última lista da planilha guardada; a lista fresca chega em seguida.
    A tela valida tudo antes de gravar e salva **nesta máquina**, em `regras.json` (pasta de
    dados do app, junto com `logs/` e `relatorios/`; a versão anterior fica em
    `regras.anterior.json`). **A planilha de frequência não recebe nenhuma configuração**:
    dela o bot só lê a BASE DE DADOS e as abas dos meses, e só grava as células dos dias.
 
-Horário previsto: exceção do dia → horário individual vigente → padrão.
+Horário previsto: exceção do dia → exceção permanente → horário individual vigente → padrão.
 Tolerância inclusiva: entrada ≤ previsto + tolerância → `.`; depois → `P`.
 
 ## Conectar via Apps Script
@@ -133,14 +135,15 @@ src/core/        regras puras (sem Electron/Google)
   pontoParser    HTML do ponto → registros (modo avançado)
   layoutMes      acha/valida colunas da aba do mês; colunas ocultas = dias não úteis
   configPlanilha regras tipadas e resolução do horário previsto
-  matcher        nome do ponto → linha (apelidos, sugestão p/ nome truncado)
+  matcher        nome do ponto → linha: apelido → nome igual → BASE → nome parecido (mesmo
+                 primeiro nome e ≥ 70% das palavras, candidato único, só em linha livre)
   planner        decisão por colaborador + plano de escrita
 src/ponto/       SecullumClient (API da Central do Funcionário)
 src/sheets/      AppsScriptGateway, GoogleSheetsGateway (Service Account), XlsxGateway (cópia, só leitura)
 apps-script/     Codigo.gs — o script que vai dentro da planilha
 src/service.ts   preencherAutomatico (um clique) / simularLote / escrita / desfazer
 src/regras.ts    tela "Horários e regras" ↔ regras.json local (carregar, validar, salvar)
-src/main.ts      bandeja + janelas; src/cli.ts linha de comando
+src/main.ts      bandeja + a janela única (Início, regras e configurações se revezam nela); src/cli.ts linha de comando
 ```
 
 ## Testes

@@ -106,6 +106,55 @@ describe('parseConfigPlanilha: itens', () => {
   })
 })
 
+describe('exceções permanentes ("Sempre, até remover")', () => {
+  const HDR = [...HDR_EXC, 'recorrente']
+  const cfg = (...linhas: string[][]) => parseConfigPlanilha(grids({ horarios: [HDR_HOR, ['76', '07:30', '', '10', '', '']], excecoes: [HDR, ...linhas] }))
+
+  it('vale em qualquer dia, sem data', () => {
+    const c = cfg(['', '771', '09:00', '', 'combinado com o gestor', 'sempre'])
+    assert.deepEqual(c.avisos, [])
+    for (const d of ['2026-01-05', '2026-09-28', '2027-03-01']) {
+      const h = resolverHorario(c, '771', d)
+      assert.equal(h.entradaMin, 9 * 60, d)
+      assert.match(h.origem, /exceção permanente \(item 1\)/)
+    }
+  })
+
+  it('"Sempre" ignora a data que sobrou no campo', () => {
+    const c = cfg(['2026-01-01', '771', '09:00', '', '', 'Sempre'])
+    assert.equal(resolverHorario(c, '771', '2026-09-28').entradaMin, 9 * 60)
+  })
+
+  it('a exceção do dia ganha da permanente (hoje avisou que chega às 10h)', () => {
+    const c = cfg(['', '771', '09:00', '', '', 'sempre'], ['2026-09-28', '771', '10:00', '', '', ''])
+    assert.equal(resolverHorario(c, '771', '2026-09-28').entradaMin, 10 * 60)
+    assert.equal(resolverHorario(c, '771', '2026-09-29').entradaMin, 9 * 60)
+  })
+
+  it('permanente ganha do horário individual e mantém a tolerância dele', () => {
+    const c = cfg(['', '76', '09:00', '', '', 'sempre'])
+    const h = resolverHorario(c, '76', '2026-09-28')
+    assert.equal(h.entradaMin, 9 * 60)
+    assert.equal(h.toleranciaMin, 10)
+  })
+
+  it('código permanente é forçado todo dia; o do dia ganha', () => {
+    const c = cfg(['', '143', '', 'FO', '', 'sempre'], ['2026-09-28', '143', '', 'AT', '', ''])
+    assert.equal(codigoForcado(c, '143', '2026-09-27')?.codigoForcado, 'FO')
+    assert.equal(codigoForcado(c, '143', '2026-09-28')?.codigoForcado, 'AT')
+  })
+
+  it('permanente sem entrada nem código não muda nada → aviso', () => {
+    assert.match(cfg(['', '771', '', '', 'só obs', 'sempre']).avisos.join(), /permanente sem entrada prevista nem código/)
+  })
+
+  it('exceção "só neste dia" continua exigindo data (arquivo antigo sem a coluna também)', () => {
+    assert.match(cfg(['', '771', '09:00', '', '', '']).avisos.join(), /data ou colaborador inválidos/)
+    const antigo = parseConfigPlanilha(grids({ excecoes: [HDR_EXC, ['2026-09-28', '771', '09:00', '', '']] }))
+    assert.equal(antigo.excecoes[0]!.sempre, false)
+  })
+})
+
 describe('resolverHorario / codigoForcado', () => {
   it('exceção > individual vigente > padrão', () => {
     const cfg = parseConfigPlanilha(CFG_GRIDS)

@@ -20,7 +20,8 @@ export const SECOES_CONFIG = {
 export const CABECALHOS_CONFIG: Record<keyof typeof SECOES_CONFIG, string[]> = {
   geral: ['tolerancia_min', 'entrada_padrao', 'horario_corte'],
   horarios: ['adm', 'entrada', 'saida', 'tolerancia_min', 'vigencia_inicio', 'vigencia_fim', 'obs'],
-  excecoes: ['data', 'adm', 'entrada_prevista', 'codigo', 'obs'],
+  // recorrente: '' = só na data; 'sempre' = todo dia até ser removida da lista.
+  excecoes: ['data', 'adm', 'entrada_prevista', 'codigo', 'obs', 'recorrente'],
   apelidos: ['nome_no_ponto', 'adm', 'obs'],
 }
 
@@ -40,7 +41,8 @@ export interface HorarioIndividual {
 }
 
 export interface Excecao {
-  data: string
+  data: string | null    // null quando é permanente
+  sempre: boolean        // vale todo dia até ser removida (ex.: entrada às 9h combinada com o gestor)
   adm: string
   entradaPrevistaMin: number | null
   codigoForcado: Codigo | null
@@ -140,12 +142,17 @@ export function parseConfigPlanilha(g: GridsConfig, overrides: OverridesGeral = 
   const te = lerTabela(g.excecoes)
   te.rows.forEach((r, i) => {
     const item = te.itens[i]!
-    const data = parseDataPlanilha(r['data'] ?? '')
+    const sempre = normalize(r['recorrente']) === 'SEMPRE'
+    const data = sempre ? null : parseDataPlanilha(r['data'] ?? '')
     const adm = normalizeAdm(r['adm'])
     const entradaPrev = r['entrada_prevista'] ? parseHora(r['entrada_prevista']) : null
     const codigo = r['codigo'] ? parseCodigo(r['codigo']) : null
-    if (!data || !adm) {
+    if ((!sempre && !data) || !adm) {
       avisos.push(`${SECOES_CONFIG.excecoes}, item ${item}: data ou colaborador inválidos — item ignorado.`)
+      return
+    }
+    if (sempre && !r['entrada_prevista'] && !r['codigo']) {
+      avisos.push(`${SECOES_CONFIG.excecoes}, item ${item}: exceção permanente sem entrada prevista nem código — não muda nada; item ignorado.`)
       return
     }
     if (r['codigo'] && !codigo) {
@@ -156,7 +163,7 @@ export function parseConfigPlanilha(g: GridsConfig, overrides: OverridesGeral = 
       avisos.push(`${SECOES_CONFIG.excecoes}, item ${item}: entrada prevista "${r['entrada_prevista']}" inválida — item ignorado.`)
       return
     }
-    excecoes.push({ data, adm, entradaPrevistaMin: entradaPrev, codigoForcado: codigo, item })
+    excecoes.push({ data, sempre, adm, entradaPrevistaMin: entradaPrev, codigoForcado: codigo, item })
   })
 
   // ── Apelidos ──
@@ -182,7 +189,18 @@ export interface HorarioPrevisto {
   origem: string // vai pro relatório: de onde veio o horário usado
 }
 
-// Ordem definida no plano: exceção do dia → horário individual vigente → padrão.
+// Exceção que vale para o ADM nesta data: a da própria data ganha da permanente
+// (ex.: quem sempre entra às 9h avisou que hoje chega às 10h).
+function excecaoDe(cfg: ConfigPlanilha, adm: string, data: string, tem: (e: Excecao) => boolean): Excecao | null {
+  const doAdm = cfg.excecoes.filter(e => e.adm === adm && tem(e))
+  return doAdm.find(e => e.data === data) ?? doAdm.find(e => e.sempre) ?? null
+}
+
+export function descreverExcecao(e: Excecao): string {
+  return `${e.sempre ? 'exceção permanente' : 'exceção do dia'} (item ${e.item})`
+}
+
+// Ordem: exceção da data → exceção permanente → horário individual vigente → padrão.
 export function resolverHorario(cfg: ConfigPlanilha, adm: string, data: string): HorarioPrevisto {
   const vigentes = cfg.horarios
     .filter(h => h.adm === adm
@@ -191,11 +209,11 @@ export function resolverHorario(cfg: ConfigPlanilha, adm: string, data: string):
     .sort((a, b) => (b.vigenciaInicio ?? '').localeCompare(a.vigenciaInicio ?? ''))
   const individual = vigentes[0]
 
-  const exc = cfg.excecoes.find(e => e.adm === adm && e.data === data && e.entradaPrevistaMin !== null)
+  const exc = excecaoDe(cfg, adm, data, e => e.entradaPrevistaMin !== null)
   const tol = individual?.toleranciaMin ?? cfg.geral.toleranciaMin
 
   if (exc) {
-    return { entradaMin: exc.entradaPrevistaMin!, toleranciaMin: tol, origem: `exceção do dia (item ${exc.item})` }
+    return { entradaMin: exc.entradaPrevistaMin!, toleranciaMin: tol, origem: descreverExcecao(exc) }
   }
   if (individual) {
     return { entradaMin: individual.entradaMin, toleranciaMin: tol, origem: `horário individual (item ${individual.item})` }
@@ -204,5 +222,5 @@ export function resolverHorario(cfg: ConfigPlanilha, adm: string, data: string):
 }
 
 export function codigoForcado(cfg: ConfigPlanilha, adm: string, data: string): Excecao | null {
-  return cfg.excecoes.find(e => e.adm === adm && e.data === data && e.codigoForcado !== null) ?? null
+  return excecaoDe(cfg, adm, data, e => e.codigoForcado !== null)
 }

@@ -46,7 +46,7 @@ describe('CLI', () => {
     const r = cli(['simular', '--html', FIXTURE, '--xlsx', xlsx])
     assert.equal(r.codigo, 0, r.erro)
     assert.match(r.saida, /2026-09-28 — aba "Setembro" — SIMULAÇÃO/)
-    assert.match(r.saida, /Será escrito \(4\)/)
+    assert.match(r.saida, /Será escrito \(5\)/)
     assert.match(r.saida, /Para gravar: node dist\/cli\.js escrever --plano/)
     const rel = fs.readdirSync(path.join(pasta, 'relatorios'))
     assert.ok(rel.some(f => /^2026-09-28_simulacao_.*\.json$/.test(f)))

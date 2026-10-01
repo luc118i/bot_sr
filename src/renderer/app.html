@@ -106,10 +106,6 @@
     .motivo { font-size: 13px; color: var(--texto-2); line-height: 1.45; }
     select.just { height: 32px; min-width: 150px; font-size: 13px; }
     .just-rodape { display: flex; justify-content: space-between; align-items: center; gap: 16px; flex-wrap: wrap; padding: 12px 4px 0; font-size: 13px; }
-    .avancado { width: min(760px, 100%); font-size: 13px; color: var(--texto-2); }
-    .avancado summary { cursor: pointer; text-align: center; list-style: none; }
-    .avancado summary::-webkit-details-marker { display: none; }
-    .avancado .linha { display: flex; gap: 8px; align-items: center; justify-content: center; flex-wrap: wrap; margin-top: 10px; }
     .arquivo { padding: 8px 12px; border: 1px dashed #CBD5E1; border-radius: 10px; color: var(--texto-3); max-width: 360px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
     @media (max-width: 900px) {
       main { padding: 24px 18px 72px; }
@@ -163,15 +159,6 @@
         <label class="alternar" title="Inclui o dia de hoje mesmo antes do horário de corte"><input type="checkbox" role="switch" id="forcar" /> Incluir hoje antes do corte</label>
       </div>
       <div class="semana" id="semana" aria-label="Esta semana"></div>
-      <details class="avancado">
-        <summary>Avançado</summary>
-        <div class="linha">
-          <span class="arquivo" id="htmlName">Nenhum arquivo HTML do ponto</span>
-          <button class="btn pequeno" id="btnHtml">Selecionar HTML…</button>
-          <button class="btn pequeno" id="btnSim">Conferir arquivos</button>
-          <button class="btn pequeno fantasma" id="btnDesfazerAnt">Desfazer escrita anterior…</button>
-        </div>
-      </details>
     </section>
 
     <section class="cartao entrar" id="progresso" hidden aria-live="polite">
@@ -232,7 +219,6 @@
     let ultimoLote = null        // último resultado (alimenta frequência, atenção e detalhes)
     let conferencias = {}        // data → última conferência gravada (conferencias.json)
     let ocupadoAgora = false
-    let htmlPaths = []
 
     // ── utilidades ──
     function el(tag, props = {}, ...kids) {
@@ -319,14 +305,15 @@
     $('navRelatorios').onclick = () => window.agent.abrirRelatorios()
     $('lnkRelatorios').onclick = () => window.agent.abrirRelatorios()
     $('btnConfig').onclick = () => window.agent.abrirConfig()
-    $('btnDesfazerAnt').onclick = async () => mostrarDesfeita(await ipc(() => window.agent.desfazerDeRelatorio()))
+    // Desfazer uma escrita antiga (escolhendo o relatório) — pelo campo de comando: "desfazer".
+    const desfazerAnterior = async () => mostrarDesfeita(await ipc(() => window.agent.desfazerDeRelatorio()))
     window.addEventListener('focus', () => { if (!ocupadoAgora) { atualizarStatus(); carregarAtividade() } })
 
     // `rotulo` explícito quando a ação grava: o interruptor "Simular" pode estar ligado
     // (ex.: "Gravar agora" depois de uma simulação) e a tela não pode dizer "Simulando…".
     function ocupado(sim, rotulo) {
       ocupadoAgora = sim
-      for (const b of document.querySelectorAll('#chips .chip, #btnCmd, #btnSim, #data')) b.disabled = sim
+      for (const b of document.querySelectorAll('#chips .chip, #btnCmd, #data')) b.disabled = sim
       if (sim) statusOcupado(rotulo || ($('simular').checked ? 'Simulando…' : 'Trabalhando…'))
       else statusNormal()
     }
@@ -352,11 +339,10 @@
       if (r.acao === 'config') return window.agent.abrirConfig()
       if (r.acao === 'relatorios') return window.agent.abrirRelatorios()
       if (r.acao === 'historico') { carregarAtividade(); return $('atividade').scrollIntoView({ behavior: 'smooth', block: 'center' }) }
-      if (r.acao === 'desfazer') return $('btnDesfazerAnt').click()
+      if (r.acao === 'desfazer') return desfazerAnterior()
       if (r.acao === 'pendencias') {
         if (!ultimoLote) return responder(texto, [el('p', { className: 'fala', textContent: 'Ainda não há pendências nesta sessão. Rode "Preencher dia" ou "Conferir semana" e eu listo quem precisa de revisão.' })])
-        abrirDetalhes('pendencias')
-        return
+        return revisarDeNovo()
       }
       responder(texto, [
         el('p', { className: 'fala', textContent: r.erro || 'Ainda não entendi esse pedido.' }),
@@ -487,21 +473,16 @@
       return t
     }
 
-    function renderTudo(lote, modo, texto, escrita, restaurado) {
+    function renderTudo(lote, modo, texto, escrita) {
       const t = contar(lote)
       const gravadas = escrita ? escrita.dias.reduce((s, d) => s + d.escritas.length, 0) : 0
       const nDias = lote.planos.length
       const frase = el('p', { className: 'fala' })
-      if (restaurado) {
-        const ps = lote.planos
-        const dias = !ps.length ? '' : ps.length === 1 ? diaLongo(ps[0].data) : `${nomeDia(ps[0].data)} a ${nomeDia(ps[ps.length - 1].data)}`
-        frase.append(el('b', { textContent: modo === 'simulacao' ? 'Última simulação. ' : 'Última conferência. ' }),
-          `${dias[0] ? dias[0].toUpperCase() + dias.slice(1) : ''}${restaurado.gravadas ? ` · ${plural(restaurado.gravadas, 'célula preenchida', 'células preenchidas')}` : ''}.`)
-      } else if (modo === 'simulacao') frase.append(el('b', { textContent: 'Simulação. ' }), `Conferi ${plural(nDias, 'dia', 'dias')}: ${plural(t.escrever, 'célula seria preenchida', 'células seriam preenchidas')}. Nada foi gravado.`)
+      if (modo === 'simulacao') frase.append(el('b', { textContent: 'Simulação. ' }), `Conferi ${plural(nDias, 'dia', 'dias')}: ${plural(t.escrever, 'célula seria preenchida', 'células seriam preenchidas')}. Nada foi gravado.`)
       else if (escrita && escrita.erro) frase.append(el('b', { textContent: 'Parei no meio. ' }), escrita.erro)
       else frase.append(el('b', { textContent: 'Pronto. ' }), `Conferi ${plural(nDias, 'dia', 'dias')} e preenchi ${plural(gravadas, 'célula', 'células')}.`)
       if (t.atencao) frase.append(` ${plural(t.atencao, 'caso precisa', 'casos precisam')} da sua revisão.`)
-      frase.append(el('span', { className: 'hora', textContent: restaurado ? quando(restaurado.quando).toLowerCase() : `hoje, ${horaAgora()}` }))
+      frase.append(el('span', { className: 'hora', textContent: `hoje, ${horaAgora()}` }))
 
       // Simulação: quantas seriam preenchidas. Gravado: quantos do seu ponto já estão na planilha
       // (preenchidos agora + os que já estavam) — "0 preenchidas" num dia já feito confundia.
@@ -518,14 +499,14 @@
         el('span', { className: 'nota ter', textContent: /domingo/i.test(p.motivo) ? 'domingo' : /oculta/i.test(p.motivo) ? 'feriado' : 'pulado' }))))
 
       const acoes = el('div', { className: 'acoes-linha' })
-      if (t.atencao) acoes.append(el('button', { className: 'btn primario', textContent: `Revisar ${plural(t.atencao, 'pendência', 'pendências')}`, onClick: () => abrirDetalhes('pendencias') }))
-      if (modo === 'simulacao' && t.escrever && !restaurado) acoes.append(el('button', { className: 'btn primario', textContent: `Gravar agora (${t.escrever})`, onClick: gravarSimulacao }))
+      if (t.atencao) acoes.append(el('button', { className: 'btn primario', textContent: `Revisar ${plural(t.atencao, 'pendência', 'pendências')}`, onClick: revisarDeNovo }))
+      if (modo === 'simulacao' && t.escrever) acoes.append(el('button', { className: 'btn primario', textContent: `Gravar agora (${t.escrever})`, onClick: gravarSimulacao }))
       acoes.append(el('button', { className: 'btn', textContent: 'Ver detalhes', onClick: () => abrirDetalhes() }))
-      if (gravadas && !restaurado) acoes.append(el('button', { className: 'btn fantasma', textContent: 'Desfazer', onClick: desfazerUltima }))
+      if (gravadas) acoes.append(el('button', { className: 'btn fantasma', textContent: 'Desfazer', onClick: desfazerUltima }))
 
       const extras = []
       if (lote.erros.length) extras.push(el('div', { className: 'alerta erro' }, el('span', { className: 'ponto' }), el('div', {}, el('b', { textContent: 'Dias com problema' }), el('span', { textContent: lote.erros.map(e => `${e.data ? diaLongo(e.data) : e.arquivo}: ${e.motivo}`).join('\n') }))))
-      responder(restaurado ? null : texto, [frase, mini, acoes, ...extras])
+      responder(texto, [frase, mini, acoes, ...extras])
       renderFrequencia(lote)
       renderAtencao()
       renderDetalhes(lote)
@@ -643,9 +624,9 @@
       if (ultimoLote) {
         const itensDe = s => ultimoLote.planos.flatMap(p => p.itens.filter(i => i.situacao === s).map(i => ({ ...i, data: p.data })))
         const rev = itensDe('revisar'), nao = itensDe('nao_encontrado'), div = itensDe('divergente')
-        if (rev.length) add('#E3A13B', `${plural(rev.length, 'pessoa sem ponto', 'pessoas sem ponto')}`, `${[...new Set(rev.map(i => nomeDia(i.data)))].join(', ')}. Pode ser folga, atestado ou falta — só você decide.`, 'Revisar', () => abrirDetalhes('pendencias'))
+        if (rev.length) add('#E3A13B', `${plural(rev.length, 'pessoa sem ponto', 'pessoas sem ponto')}`, `${[...new Set(rev.map(i => nomeDia(i.data)))].join(', ')}. Pode ser folga, atestado ou falta — só você decide.`, 'Revisar', revisarDeNovo)
         if (nao.length) add('#B42318', `${plural(nao.length, 'nome não encontrado', 'nomes não encontrados')}`, `${nao[0].motivo} Depois de cadastrar, confira o dia de novo para sumir daqui.`, 'Cadastrar apelido', () => window.agent.abrirRegras())
-        if (div.length) add('#B42318', `${plural(div.length, 'lançamento diverge', 'lançamentos divergem')} do ponto`, 'O bot não alterou nada — confira se o horário individual está certo.', 'Ver quais', () => abrirDetalhes('pendencias'))
+        if (div.length) add('#B42318', `${plural(div.length, 'lançamento diverge', 'lançamentos divergem')} do ponto`, 'O bot não alterou nada — confira se o horário individual está certo.', 'Revisar', revisarDeNovo)
         if (ultimoLote.erros.length) add('#B42318', `${plural(ultimoLote.erros.length, 'dia com erro', 'dias com erro')}`, ultimoLote.erros[0].motivo, null)
       }
       $('atencao').replaceChildren(...(itens.length ? itens : [el('div', { className: 'vazio', style: 'padding:14px 8px 18px' },
@@ -790,23 +771,16 @@
       $('detalhes').scrollIntoView({ behavior: 'smooth', block: 'start' })
     }
 
-    // ── avançado: arquivos HTML ──
-    $('btnHtml').onclick = async () => {
-      const r = await window.agent.pickHtmlFiles()
-      if (!r) return
-      htmlPaths = r.map(f => f.path)
-      $('htmlName').textContent = r.length === 1 ? r[0].name : `${r.length} arquivos`
-      $('htmlName').title = r.map(f => f.name).join('\n')
-    }
-    $('btnSim').onclick = async () => {
-      if (!htmlPaths.length) return responder('Conferir arquivos', [el('p', { className: 'fala', textContent: 'Escolha o(s) HTML(s) do ponto primeiro.' })])
-      ocupado(true)
-      $('progresso').hidden = true
-      const r = await ipc(() => window.agent.simular({ htmlPaths, forcar: $('forcar').checked }))
-      ocupado(false)
-      if (!r.ok) return responderErro('Conferir arquivos', r.message)
-      ultimoLote = r.lote
-      renderTudo(r.lote, 'simulacao', 'Conferir arquivos do ponto', null)
+    // "Revisar": roda o bot de novo nos dias do último resultado — o que você
+    // corrigiu (apelido, exceção, alguém que bateu o ponto depois) já entra — e
+    // abre o que ainda precisa de você (sem ponto → justificar).
+    async function revisarDeNovo() {
+      const datas = (ultimoLote?.planos || []).map(p => p.data).sort()
+      if (!datas.length) return responder('Revisar pendências', [el('p', { className: 'fala', textContent: 'Ainda não há pendências. Rode "Preencher dia" ou "Conferir semana" e eu listo quem precisa de revisão.' })])
+      $('data').value = datas[0]
+      renderSemana()
+      await rodar({ acao: datas.length > 1 ? 'semana' : 'dia', data: datas[0], simular: $('simular').checked }, 'Revisar pendências')
+      if (ultimoLote && ultimoLote.planos.some(p => pendentesDe(p))) abrirDetalhes('pendencias')
     }
 
     // ── início ──
@@ -814,14 +788,17 @@
     renderSemana()
     atualizarStatus()
     carregarAtividade()
-    // Ao reabrir: volta o último resultado (resumo, frequência e pendências — dá pra justificar).
+    // Ao reabrir: volta o último resultado em "Precisa da sua atenção", na frequência e
+    // nos detalhes (dá pra justificar). "Revisar" roda o bot de novo nesses dias.
     ;(async () => {
       let est = null
       try { est = await window.agent.estadoInicial() } catch { return }
       if (!est || !est.ultimo || ultimoLote) return
       conferencias = est.conferencias || conferencias
       ultimoLote = est.ultimo.lote
-      renderTudo(ultimoLote, est.ultimo.modo, null, null, est.ultimo)
+      renderFrequencia(ultimoLote)
+      renderAtencao()
+      renderDetalhes(ultimoLote)
       renderSemana()
     })()
     $('cmd').focus()

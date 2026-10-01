@@ -1,5 +1,5 @@
 import type { Codigo } from './codigos'
-import { codigoForcado, resolverHorario, type ConfigPlanilha, type HorarioPrevisto } from './configPlanilha'
+import { codigoForcado, descreverExcecao, resolverHorario, type ConfigPlanilha, type HorarioPrevisto } from './configPlanilha'
 import type { LayoutMes, LinhaColaborador } from './layoutMes'
 import { Matcher, type BaseColaborador } from './matcher'
 import type { PontoRegistro } from './pontoParser'
@@ -161,8 +161,17 @@ export function montarPlano(e: EntradaPlano): Plano {
     horario: null,
   })
 
-  for (const reg of e.registros) {
-    const m = matcher.resolver(reg.nome)
+  // 1ª passada: caminhos exatos (apelido, nome igual, BASE). 2ª: nome parecido
+  // só pra quem sobrou, e só nas linhas que ninguém pegou de forma exata — um
+  // match aproximado nunca tira a linha de quem casou certinho.
+  const matches = e.registros.map(reg => matcher.resolver(reg.nome))
+  const ocupadas = new Set(matches.flatMap(m => (m.tipo === 'ok' ? [m.linha.linha] : [])))
+  e.registros.forEach((reg, k) => {
+    if (matches[k]!.tipo === 'nao_encontrado') matches[k] = matcher.parecido(reg.nome, ocupadas) ?? matches[k]!
+  })
+
+  for (const [k, reg] of e.registros.entries()) {
+    const m = matches[k]!
     const ponto = { status: reg.status, entrada1: reg.entrada1, icone: reg.icone }
 
     if (m.tipo !== 'ok') {
@@ -184,6 +193,8 @@ export function montarPlano(e: EntradaPlano): Plano {
       itens.push(it)
       continue
     }
+    const via = m.via === 'apelido' ? '[via apelido] '
+      : m.via === 'parecido' ? `[nome parecido ${Math.round((m.semelhanca ?? 0) * 100)}%: ponto "${reg.nome}" × planilha "${m.linha.nome}"] ` : ''
 
     const it = itemBase(m.linha, reg.nome)
     it.ponto = ponto
@@ -192,10 +203,10 @@ export function montarPlano(e: EntradaPlano): Plano {
 
     const forcado = codigoForcado(cfg, m.linha.adm, data)
     const dec = forcado
-      ? { codigo: forcado.codigoForcado, motivo: `Código forçado por exceção do dia (item ${forcado.item})` }
+      ? { codigo: forcado.codigoForcado, motivo: `Código forçado por ${descreverExcecao(forcado)}` }
       : decidir(reg, h)
     it.codigo = dec.codigo
-    it.motivo = (m.via === 'apelido' ? '[via apelido] ' : '') + dec.motivo
+    it.motivo = via + dec.motivo
     classificar(it)
     itens.push(it)
     porLinha.set(m.linha.linha, [...(porLinha.get(m.linha.linha) ?? []), it])
@@ -219,7 +230,7 @@ export function montarPlano(e: EntradaPlano): Plano {
     const forcado = codigoForcado(cfg, l.adm, data)
     if (forcado) {
       it.codigo = forcado.codigoForcado
-      it.motivo = `Código forçado por exceção do dia (item ${forcado.item}; não aparece no ponto)`
+      it.motivo = `Código forçado por ${descreverExcecao(forcado)}; não aparece no ponto`
       classificar(it)
     } else {
       // O ponto só lista a equipe de quem logou; a aba tem todos os setores.

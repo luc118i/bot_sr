@@ -14,11 +14,12 @@ describe('simular', () => {
     const plano = await simular28(cenario())
     const por = (nome: string) => plano.itens.find(i => normalize(i.nomePonto ?? i.nomePlanilha) === nome)!
 
-    assert.deepEqual(plano.escritas.map(e => `${e.celula}=${e.codigo}`).sort(), ['AH16=AT', 'AH8=.', 'AH9=.', 'AH10=P'].sort())
+    assert.deepEqual(plano.escritas.map(e => `${e.celula}=${e.codigo}`).sort(), ['AH16=AT', 'AH8=.', 'AH9=.', 'AH10=P', 'AH13=.'].sort())
     assert.equal(por('PAULO MODELO DA SILVA').situacao, 'revisar')
     assert.equal(por('ANDRE JOSE DE EXEMPLO').situacao, 'confere')
-    assert.equal(por('RAIMUNDO DAS NEVES PRADO DOS SANTOS').situacao, 'nao_encontrado')
-    assert.match(por('RAIMUNDO DAS NEVES PRADO DOS SANTOS').motivo, /ADM 1417.*Apelidos/)
+    // Nome cortado na planilha: 3 de 4 palavras (75%) → casa sozinho, e o motivo diz que foi por semelhança.
+    assert.equal(por('RAIMUNDO DAS NEVES PRADO DOS SANTOS').situacao, 'escrever')
+    assert.match(por('RAIMUNDO DAS NEVES PRADO DOS SANTOS').motivo, /^\[nome parecido 75%: ponto "RAIMUNDO DAS NEVES PRADO DOS SANTOS" × planilha "RAIMUNDO DAS NEVES PRADO DOS"\]/)
     assert.equal(por('FELIPE SEMLINHA DE FARIA').situacao, 'sem_linha_no_mes')
     assert.equal(por('LUIZ EXCECAO OLIVEIRA').situacao, 'divergente')
     assert.equal(por('SERGIO ATESTADO QUEIROZ').situacao, 'ausente_no_ponto')
@@ -86,7 +87,7 @@ describe('executarEscrita', () => {
     gw.abas['Setembro']![8 - 1]![34 - 1] = 'FO' // alguém lançou AH8 à mão nesse meio tempo
     const r = await executarEscrita(gw, plano)
     assert.deepEqual(r.puladas, [{ celula: 'AH8', valorEncontrado: 'FO' }])
-    assert.equal(gw.escritas.length, 3)
+    assert.equal(gw.escritas.length, 4)
     assert.equal(gw.abas['Setembro']![7]![33], 'FO')
 
     const plano2 = await simular28(gw)
@@ -182,12 +183,12 @@ describe('desfazerEscrita', () => {
     const plano = await simular28(gw)
     const antesAH = gw.abas['Setembro']!.map(r => r[33] ?? '')
     const r = await executarEscrita(gw, plano)
-    assert.equal(r.escritas.length, 4)
+    assert.equal(r.escritas.length, 5)
 
     gw.abas['Setembro']![10 - 1]![33] = 'AT' // AH10: bot gravou "P", alguém trocou por "AT"
     const d = await desfazerEscrita(gw, plano.aba, r.escritas)
 
-    assert.deepEqual(d.apagadas.sort(), ['AH16', 'AH8', 'AH9'].sort())
+    assert.deepEqual(d.apagadas.sort(), ['AH13', 'AH16', 'AH8', 'AH9'].sort())
     assert.deepEqual(d.mantidas, [{ celula: 'AH10', valorEncontrado: 'AT', escritoPeloBot: 'P' }])
     const depoisAH = gw.abas['Setembro']!.map(r => r[33] ?? '')
     assert.deepEqual(depoisAH.map((v, i) => (i === 9 ? antesAH[i] : v)), antesAH)

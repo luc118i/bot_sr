@@ -12,8 +12,6 @@ contextBridge.exposeInMainWorld('agent', {
     ipcRenderer.removeAllListeners('progresso')
     ipcRenderer.on('progresso', (_e, ev) => cb(ev))
   },
-  pickHtmlFiles: () => ipcRenderer.invoke('pick-html-files'),
-  simular: (params: unknown) => ipcRenderer.invoke('simular', params),
   escrever: () => ipcRenderer.invoke('escrever'),
   justificar: (params: unknown) => ipcRenderer.invoke('justificar', params),
   desfazer: () => ipcRenderer.invoke('desfazer'),
@@ -21,10 +19,12 @@ contextBridge.exposeInMainWorld('agent', {
   abrirRelatorios: () => ipcRenderer.invoke('abrir-relatorios'),
   abrirRegras: () => ipcRenderer.invoke('abrir-regras'),
   abrirConfig: () => ipcRenderer.invoke('abrir-config'),
+  abrirInicio: () => ipcRenderer.invoke('abrir-inicio'),
   statusBot: () => ipcRenderer.invoke('status-bot'),
   estadoInicial: () => ipcRenderer.invoke('estado-inicial'),
   conferencias: () => ipcRenderer.invoke('conferencias'),
   historico: () => ipcRenderer.invoke('historico'),
   regrasCarregar: () => ipcRenderer.invoke('regras-carregar'),
+  regrasPlanilha: () => ipcRenderer.invoke('regras-planilha'),
   regrasSalvar: (regras: unknown) => ipcRenderer.invoke('regras-salvar', regras),
 })
