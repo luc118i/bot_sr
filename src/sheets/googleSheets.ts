@@ -1,13 +1,18 @@
-import { google, type sheets_v4 } from 'googleapis'
+import type { sheets_v4 } from 'googleapis'
 import { refAba, type SheetGateway } from './gateway'
+
+// googleapis leva ~8 s pra carregar e só serve pra conexão por Service Account —
+// carregado na primeira vez que for usado, não na abertura do app.
+const googleapis = () => require('googleapis') as typeof import('googleapis')
 
 const SCOPES = ['https://www.googleapis.com/auth/spreadsheets']
 // Folga generosa: a aba de mês usa até ~AZ e ~130 linhas hoje.
 const FAIXA_LEITURA = 'A1:CZ1000'
 
-/** Aceita o ID puro ou o link completo colado da barra do navegador. */
+/** Aceita o ID puro ou o link completo colado da barra do navegador (inclusive
+ *  o de quem tem várias contas Google: /spreadsheets/u/1/d/<id>). */
 export function extrairSpreadsheetId(raw: string): string {
-  const m = raw.match(/\/spreadsheets\/d\/([a-zA-Z0-9_-]+)/)
+  const m = raw.match(/\/spreadsheets\/(?:u\/\d+\/)?d\/([a-zA-Z0-9_-]+)/)
   return m ? m[1]! : raw.trim()
 }
 
@@ -29,7 +34,7 @@ export function criarAuth(serviceAccountB64: string) {
   }
   return {
     email: creds.client_email as string,
-    auth: new google.auth.JWT({ email: creds.client_email, key: creds.private_key, scopes: SCOPES }),
+    auth: new (googleapis().google.auth.JWT)({ email: creds.client_email, key: creds.private_key, scopes: SCOPES }),
   }
 }
 
@@ -44,7 +49,7 @@ export class GoogleSheetsGateway implements SheetGateway {
 
   constructor(private spreadsheetId: string, serviceAccountB64: string) {
     const { auth, email } = criarAuth(serviceAccountB64)
-    this.api = google.sheets({ version: 'v4', auth })
+    this.api = googleapis().google.sheets({ version: 'v4', auth })
     this.descricao = `Google Sheets ${spreadsheetId} (como ${email})`
   }
 

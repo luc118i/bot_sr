@@ -29,7 +29,8 @@ function doPost(e) {
     if (!token) return resposta_({ ok: false, erro: 'O script não tem a propriedade TOKEN configurada.' })
     if (req.token !== token) return resposta_({ ok: false, erro: 'Token inválido.' })
 
-    const acao = ACOES_[req.acao]
+    // hasOwnProperty: "toString", "constructor"... existem em todo objeto e não são ações.
+    const acao = Object.prototype.hasOwnProperty.call(ACOES_, req.acao) ? ACOES_[req.acao] : null
     if (!acao) return resposta_({ ok: false, erro: 'Ação desconhecida: ' + req.acao })
 
     // Uma operação por vez — duas máquinas rodando o bot ao mesmo tempo não

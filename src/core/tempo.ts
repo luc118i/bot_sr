@@ -21,6 +21,10 @@ export function parseDataISO(s: string): DataISO {
   return d
 }
 
+function dataValida(d: DataISO): string | null {
+  return d.mes >= 1 && d.mes <= 12 && d.dia >= 1 && d.dia <= diasNoMes(d.ano, d.mes) ? toISO(d) : null
+}
+
 export function toISO(d: DataISO): string {
   return `${d.ano}-${String(d.mes).padStart(2, '0')}-${String(d.dia).padStart(2, '0')}`
 }
@@ -38,14 +42,15 @@ export function diaDaSemana(d: DataISO): number {
 }
 
 // Aceita o que o Google Sheets devolve formatado em pt-BR ("28/09/2026"), ISO,
-// e o número serial do Excel (xlsx). Devolve ISO ou null.
+// e o número serial do Excel (xlsx). Devolve ISO ou null — também null pra
+// data que não existe ("31/02/2026"), em vez de uma ISO inválida que nunca casa.
 export function parseDataPlanilha(v: string): string | null {
   const s = v.trim()
   if (!s) return null
   let m = /^(\d{1,2})\/(\d{1,2})\/(\d{4})$/.exec(s)
-  if (m) return toISO({ ano: +m[3]!, mes: +m[2]!, dia: +m[1]! })
+  if (m) return dataValida({ ano: +m[3]!, mes: +m[2]!, dia: +m[1]! })
   m = /^(\d{4})-(\d{2})-(\d{2})/.exec(s)
-  if (m) return `${m[1]}-${m[2]}-${m[3]}`
+  if (m) return dataValida({ ano: +m[1]!, mes: +m[2]!, dia: +m[3]! })
   if (/^\d{5}(\.\d+)?$/.test(s)) {
     const ms = Math.round((Math.floor(+s) - 25569) * 86400 * 1000)
     const d = new Date(ms)

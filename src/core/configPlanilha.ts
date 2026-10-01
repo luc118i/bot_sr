@@ -115,15 +115,24 @@ export function parseConfigPlanilha(g: GridsConfig, overrides: OverridesGeral = 
       avisos.push(`${SECOES_CONFIG.horarios}, item ${item}: colaborador ou entrada inválidos — item ignorado.`)
       return
     }
+    // Campo preenchido mas ilegível NUNCA é tratado como vazio: tolerância
+    // inválida cairia no padrão, e vigência inválida faria o horário valer pra sempre.
     const tolInd = r['tolerancia_min'] ? Number(r['tolerancia_min']) : null
-    horarios.push({
-      adm,
-      entradaMin: ent,
-      toleranciaMin: tolInd !== null && Number.isFinite(tolInd) ? tolInd : null,
-      vigenciaInicio: r['vigencia_inicio'] ? parseDataPlanilha(r['vigencia_inicio']) : null,
-      vigenciaFim: r['vigencia_fim'] ? parseDataPlanilha(r['vigencia_fim']) : null,
-      item,
-    })
+    if (tolInd !== null && (!Number.isFinite(tolInd) || tolInd < 0)) {
+      avisos.push(`${SECOES_CONFIG.horarios}, item ${item}: tolerância "${r['tolerancia_min']}" inválida — item ignorado.`)
+      return
+    }
+    const vigenciaInicio = r['vigencia_inicio'] ? parseDataPlanilha(r['vigencia_inicio']) : null
+    const vigenciaFim = r['vigencia_fim'] ? parseDataPlanilha(r['vigencia_fim']) : null
+    if ((r['vigencia_inicio'] && !vigenciaInicio) || (r['vigencia_fim'] && !vigenciaFim)) {
+      avisos.push(`${SECOES_CONFIG.horarios}, item ${item}: vigência inválida ("${r['vigencia_inicio'] ?? ''}" a "${r['vigencia_fim'] ?? ''}") — item ignorado.`)
+      return
+    }
+    if (vigenciaInicio && vigenciaFim && vigenciaInicio > vigenciaFim) {
+      avisos.push(`${SECOES_CONFIG.horarios}, item ${item}: vigência começa (${vigenciaInicio}) depois de terminar (${vigenciaFim}) — item ignorado.`)
+      return
+    }
+    horarios.push({ adm, entradaMin: ent, toleranciaMin: tolInd, vigenciaInicio, vigenciaFim, item })
   })
 
   // ── Exceções ──

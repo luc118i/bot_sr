@@ -1,4 +1,4 @@
-import ExcelJS from 'exceljs'
+import type ExcelJS from 'exceljs'
 import path from 'path'
 import type { SheetGateway } from './gateway'
 
@@ -14,7 +14,7 @@ export class XlsxGateway implements SheetGateway {
 
   private async carregar() {
     if (!this.wb) {
-      this.wb = new ExcelJS.Workbook()
+      this.wb = new (require('exceljs') as typeof import('exceljs')).Workbook() // carregado só no modo .xlsx (CLI)
       await this.wb.xlsx.readFile(this.arquivo)
     }
     return this.wb

@@ -9,7 +9,15 @@
     "build:ts": "tsc",
     "dev": "npm run build:ts && electron .",
     "cli": "node dist/cli.js",
-    "test": "npm run build:ts && node --test \"dist/**/*.test.js\"",
+    "test": "npm run build:ts && npm run test:run",
+    "test:run": "node --enable-source-maps --require ./dist/__tests__/helpers/setup.js --test --test-reporter=spec \"dist/__tests__/**/*.test.js\"",
+    "test:unit": "npm run build:ts && node --enable-source-maps --require ./dist/__tests__/helpers/setup.js --test --test-reporter=spec \"dist/__tests__/unit/**/*.test.js\"",
+    "test:integration": "npm run build:ts && node --enable-source-maps --require ./dist/__tests__/helpers/setup.js --test --test-reporter=spec \"dist/__tests__/integration/**/*.test.js\"",
+    "test:property": "npm run build:ts && node --enable-source-maps --require ./dist/__tests__/helpers/setup.js --test --test-reporter=spec \"dist/__tests__/property/**/*.test.js\"",
+    "test:coverage": "npm run build:ts && node --enable-source-maps --require ./dist/__tests__/helpers/setup.js --test --test-reporter=spec --experimental-test-coverage --test-coverage-exclude=\"dist/__tests__/**\" --test-coverage-exclude=\"src/__tests__/**\" --test-coverage-exclude=\"**/node_modules/**\" --test-coverage-lines=85 --test-coverage-branches=80 --test-coverage-functions=85 \"dist/__tests__/**/*.test.js\"",
+    "test:tz": "npm run build:ts && node scripts/test-tz.js",
+    "test:ui": "npm run build:ts && electron dist/__tests__/ui/runner.js",
+    "test:all": "npm run build:ts && npm run test:run && node scripts/test-tz.js && electron dist/__tests__/ui/runner.js",
     "dist": "npm run build:ts && electron-builder"
   },
   "dependencies": {

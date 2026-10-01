@@ -110,7 +110,12 @@ export class SecullumClient implements FontePonto {
       if (r.status === 401) throw new PontoAuthError('Número ou senha do ponto inválidos.')
     }
     if (!r.ok) throw new Error(`Ponto de ${data}: HTTP ${r.status} ${r.statusText}`)
-    const json = JSON.parse((await r.text()) || '{}') as RespostaPontoDiario
+    let json: RespostaPontoDiario
+    try {
+      json = JSON.parse((await r.text()) || '{}')
+    } catch {
+      throw new Error(`Ponto de ${data}: resposta inválida (não é JSON) — o servidor do ponto pode estar em manutenção.`)
+    }
     if (!Array.isArray(json.lista)) throw new Error(`Ponto de ${data}: resposta sem "lista" — a API pode ter mudado.`)
     return json.lista
   }

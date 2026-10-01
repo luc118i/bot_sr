@@ -53,7 +53,7 @@ trabalhado cuja coluna foi esquecida visível só gera "sem ponto → revisão" 
 ```
 npm install
 npm run dev          # app na bandeja → "Preencher frequência"
-npm test             # testes do núcleo
+npm test             # suíte completa (unit + integração + propriedade) — ver "Testes"
 ```
 
 CLI (mesmo núcleo):
@@ -63,7 +63,6 @@ node dist/cli.js simular --html seg.html --html ter.html --html qua.html
 node dist/cli.js simular --html ponto.html --xlsx copia.xlsx --entrada-padrao 08:00 --tolerancia 5
 node dist/cli.js escrever --plano relatorios/<data>_simulacao_<hora>.json   # um dia por vez
 node dist/cli.js desfazer --escrita relatorios/<data>_escrita_<hora>.json
-node dist/cli.js criar-abas-config
 ```
 
 `--xlsx` lê uma cópia baixada da planilha, só leitura — serve para simular sem tocar no Google.
@@ -129,7 +128,7 @@ Na cópia de 2026 isso reprova **Março** (falta o 15), **Maio** (falta o 3) e *
 ## Estrutura
 
 ```
-src/core/        regras puras (sem Electron/Google) + testes
+src/core/        regras puras (sem Electron/Google)
   pontoApi       resposta da API do ponto → registros
   pontoParser    HTML do ponto → registros (modo avançado)
   layoutMes      acha/valida colunas da aba do mês; colunas ocultas = dias não úteis
@@ -143,6 +142,26 @@ src/service.ts   preencherAutomatico (um clique) / simularLote / escrita / desfa
 src/regras.ts    tela "Horários e regras" ↔ regras.json local (carregar, validar, salvar)
 src/main.ts      bandeja + janelas; src/cli.ts linha de comando
 ```
+
+## Testes
+
+| Comando | O que roda | Tempo |
+|---|---|---|
+| `npm test` | compila e roda tudo de `src/__tests__/` (unit, integração, propriedade) | ~1 min |
+| `npm run test:unit` / `test:integration` / `test:property` | só uma camada | |
+| `npm run test:coverage` | suíte + cobertura; **falha** abaixo de 85% linhas / 80% ramos / 85% funções | ~1 min |
+| `npm run test:tz` | a suíte em 7 fusos (UTC, Brasília, +14, −11, +5:30, dois com horário de verão) | ~6 min |
+| `npm run test:ui` | **E2E do app real** no Electron: main + preload + as 3 telas, com o ponto simulado e o `Codigo.gs` real numa sandbox fazendo papel do Google — abre janelas por ~1 min | ~1 min |
+| `npm run test:all` | tudo acima, menos cobertura | |
+
+Camadas (`src/__tests__/`):
+
+- `unit/` — núcleo puro: datas, normalização, leitor do ponto (HTML e API), layout da aba, regras, plano, relatório, intérprete de comandos.
+- `integration/` — fluxos do serviço contra uma planilha em memória (simular → gravar → justificar → desfazer), regras locais, `config.json` com segredos cifrados, os conectores (Secullum, Apps Script, Google Sheets, .xlsx) com rede simulada, o `Codigo.gs` executado de verdade numa sandbox `vm`, e a CLI num processo separado.
+- `property/` — centenas de planilhas/pontos aleatórios checando as regras inegociáveis: nunca decide F, só escreve em célula vazia da coluna do dia, idempotente, desfazer devolve a planilha exatamente como era. Semente fixa; uma falha mostra como reproduzir (`FUZZ_SEED=… FUZZ_RUNS=1 npm run test:property`).
+- `ui/runner.ts` — o E2E. Nada sai pra internet (chamada fora do mundo simulado falha o teste) e nada toca na pasta de dados do app de verdade. `E2E_MANTER=1` guarda a pasta temporária com as capturas de tela.
+
+Cada arquivo de teste roda isolado (`helpers/setup.ts`): pasta de dados, `regras.json` e `config.json` temporários, sem log na pasta do projeto. O CI (`.github/workflows/testes.yml`) roda cobertura, fusos e E2E em Windows.
 
 ## Fora do MVP
 

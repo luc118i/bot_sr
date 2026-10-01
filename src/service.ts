@@ -274,11 +274,23 @@ export interface ResultadoEscrita {
   puladas: { celula: string; valorEncontrado: string }[]
 }
 
+// A conferência "a célula ainda está vazia?" só vale se veio um valor pra CADA
+// célula pedida. Uma resposta truncada faria `atuais[i] ?? ''` parecer vazia —
+// e o bot sobrescreveria trabalho de alguém. Na dúvida, não mexe em nada.
+async function lerParaConferir(gw: SheetGateway, aba: string, celulas: string[]): Promise<string[]> {
+  if (!celulas.length) return []
+  const atuais = await gw.lerCelulas(aba, celulas)
+  if (!Array.isArray(atuais) || atuais.length !== celulas.length || atuais.some(v => typeof v !== 'string')) {
+    throw new Error(`A leitura de conferência da aba ${aba} veio incompleta (${Array.isArray(atuais) ? atuais.length : 0} de ${celulas.length} células) — nada foi alterado. Tente de novo.`)
+  }
+  return atuais
+}
+
 // Aplica um plano JÁ REVISADO. Relê cada célula imediatamente antes de
 // escrever: se alguém preencheu à mão entre a simulação e agora, pula.
 export async function executarEscrita(gw: SheetGateway, plano: Plano): Promise<ResultadoEscrita> {
   const celulas = plano.escritas.map(e => e.celula)
-  const atuais = await gw.lerCelulas(plano.aba, celulas)
+  const atuais = await lerParaConferir(gw, plano.aba, celulas)
   const escritas: ResultadoEscrita['escritas'] = []
   const puladas: ResultadoEscrita['puladas'] = []
   plano.escritas.forEach((e, i) => {
@@ -296,14 +308,17 @@ export async function executarEscrita(gw: SheetGateway, plano: Plano): Promise<R
 // hora da conferência) e segue a mesma regra da escrita: relê a célula e, se
 // alguém preencheu nesse meio tempo, pula. É aqui — decisão humana — que 'F' entra.
 export async function justificar(gw: SheetGateway, plano: Plano, pedidos: { celula: string; codigo: string }[]): Promise<ResultadoEscrita> {
+  const vistas = new Set<string>()
   const validos = pedidos.map(p => {
     const codigo = parseCodigo(p.codigo)
     if (!codigo) throw new Error(`Código "${p.codigo}" não está na legenda da planilha.`)
-    const item = plano.itens.find(i => i.celula === p.celula)
+    const item = p.celula ? plano.itens.find(i => i.celula === p.celula) : undefined
     if (!item || item.situacao !== 'revisar') throw new Error(`A célula ${p.celula} não está entre as pendências de ${plano.data}.`)
+    if (vistas.has(p.celula)) throw new Error(`A célula ${p.celula} está repetida no pedido — escolha um código só.`)
+    vistas.add(p.celula)
     return { celula: p.celula, codigo }
   })
-  const atuais = await gw.lerCelulas(plano.aba, validos.map(v => v.celula))
+  const atuais = await lerParaConferir(gw, plano.aba, validos.map(v => v.celula))
   const escritas: ResultadoEscrita['escritas'] = []
   const puladas: ResultadoEscrita['puladas'] = []
   validos.forEach((v, i) => {
@@ -382,7 +397,7 @@ export interface ResultadoDesfazer {
 // pessoa. Por isso é mais fino que o Histórico de versões do Google, que
 // voltaria a planilha inteira.
 export async function desfazerEscrita(gw: SheetGateway, aba: string, escritas: ResultadoEscrita['escritas']): Promise<ResultadoDesfazer> {
-  const atuais = await gw.lerCelulas(aba, escritas.map(e => e.celula))
+  const atuais = await lerParaConferir(gw, aba, escritas.map(e => e.celula))
   const apagadas: string[] = []
   const mantidas: ResultadoDesfazer['mantidas'] = []
   escritas.forEach((e, i) => {

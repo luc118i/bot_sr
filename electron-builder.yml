@@ -17,6 +17,8 @@ files:
   - dist/**/*
   - "!dist/**/*.map"
   - "!dist/**/*.test.js"
+  - "!dist/__tests__/**"
+  - "!dist/.tsbuildinfo"
 
 extraResources:
   - from: src/renderer

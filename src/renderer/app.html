@@ -258,6 +258,16 @@
       const iso = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
       return iso === dia ? `Hoje, ${h}` : iso === ontem ? `Ontem, ${h}` : `${String(d.getDate()).padStart(2, '0')}/${String(d.getMonth() + 1).padStart(2, '0')}, ${h}`
     }
+    // IPC que rejeita (ex.: tela nova com o app antigo ainda aberto) vira {ok:false}
+    // com mensagem legível — a tela nunca fica presa em "Trabalhando…".
+    async function ipc(fn) {
+      try { return await fn() } catch (err) {
+        const msg = String((err && err.message) || err)
+        return { ok: false, message: /No handler registered/.test(msg)
+          ? 'O app aberto é mais antigo que esta tela — saia pelo ícone da bandeja (Sair) e abra de novo.'
+          : msg.replace(/^Error invoking remote method '[^']+': (Error: )?/, '') }
+      }
+    }
     function plural(n, um, varios) { return `${n} ${n === 1 ? um : varios}` }
 
     let toastTimer = null
@@ -309,13 +319,15 @@
     $('navRelatorios').onclick = () => window.agent.abrirRelatorios()
     $('lnkRelatorios').onclick = () => window.agent.abrirRelatorios()
     $('btnConfig').onclick = () => window.agent.abrirConfig()
-    $('btnDesfazerAnt').onclick = async () => mostrarDesfeita(await window.agent.desfazerDeRelatorio())
+    $('btnDesfazerAnt').onclick = async () => mostrarDesfeita(await ipc(() => window.agent.desfazerDeRelatorio()))
     window.addEventListener('focus', () => { if (!ocupadoAgora) { atualizarStatus(); carregarAtividade() } })
 
-    function ocupado(sim) {
+    // `rotulo` explícito quando a ação grava: o interruptor "Simular" pode estar ligado
+    // (ex.: "Gravar agora" depois de uma simulação) e a tela não pode dizer "Simulando…".
+    function ocupado(sim, rotulo) {
       ocupadoAgora = sim
       for (const b of document.querySelectorAll('#chips .chip, #btnCmd, #btnSim, #data')) b.disabled = sim
-      if (sim) statusOcupado($('simular').checked ? 'Simulando…' : 'Trabalhando…')
+      if (sim) statusOcupado(rotulo || ($('simular').checked ? 'Simulando…' : 'Trabalhando…'))
       else statusNormal()
     }
 
@@ -359,7 +371,7 @@
       if (data > hojeISO()) return responder(texto, [el('p', { className: 'fala', textContent: 'Esse dia ainda não aconteceu — escolha hoje ou uma data anterior.' })])
       ocupado(true)
       $('resposta').hidden = true
-      const r = await window.agent.preencher({ data, modo: acao, apenasConferir: simular, forcar: $('forcar').checked })
+      const r = await ipc(() => window.agent.preencher({ data, modo: acao, apenasConferir: simular, forcar: $('forcar').checked }))
       ocupado(false)
       if (!r.ok) {
         $('progresso').hidden = true
@@ -523,10 +535,13 @@
       const btn = ev.currentTarget
       if (!confirm('Gravar na planilha o que a simulação mostrou?\n\nCélulas que alguém preencher nesse meio tempo serão puladas.')) return
       btn.disabled = true
-      ocupado(true)
-      const r = await window.agent.escrever()
+      ocupado(true, 'Gravando…')
+      const r = await ipc(() => window.agent.escrever())
       ocupado(false)
-      if (!r.ok && !r.dias?.length) return responderErro('Gravar agora', r.message)
+      if (!r.ok && !r.dias?.length) { btn.disabled = false; return responderErro('Gravar agora', r.message) }
+      // A tela deixa de dizer "Simulação — nada foi gravado": passa a mostrar o que foi gravado.
+      $('progresso').hidden = true
+      renderTudo(ultimoLote, 'gravado', 'Gravar agora', { dias: r.dias || [], erro: r.ok ? null : r.message })
       const n = (r.dias || []).reduce((s, d) => s + d.escritas.length, 0)
       toast(`${plural(n, 'célula gravada', 'células gravadas')} na planilha`, n ? { rotulo: 'Desfazer', fn: desfazerUltima } : null)
       carregarAtividade()
@@ -534,7 +549,7 @@
 
     async function desfazerUltima() {
       if (!confirm('Apagar as células gravadas pelo bot nesta escrita?\n\nSó são apagadas as que ainda tiverem exatamente o código que o bot gravou — o que alguém mudou depois fica.')) return
-      mostrarDesfeita(await window.agent.desfazer())
+      mostrarDesfeita(await ipc(() => window.agent.desfazer()))
     }
     function mostrarDesfeita(r) {
       if (!r || (!r.ok && r.cancelado)) return
@@ -707,8 +722,8 @@
       const nomes = itens.map(x => { const i = plano.itens.find(i => i.celula === x.celula); return `${i.nomePlanilha || i.nomePonto} → ${x.codigo}` })
       if (!confirm(`Gravar na aba ${plano.aba} (${diaLongo(plano.data)})?\n\n${nomes.join('\n')}`)) return
       btn.disabled = true
-      ocupado(true)
-      const r = await window.agent.justificar({ data: plano.data, itens })
+      ocupado(true, 'Gravando…')
+      const r = await ipc(() => window.agent.justificar({ data: plano.data, itens }))
       ocupado(false)
       if (!r.ok) { btn.disabled = false; return responderErro('Justificar', r.message) }
       // Atualiza a tela: quem foi gravado sai das pendências e passa pra "Preenchidos".
@@ -787,7 +802,7 @@
       if (!htmlPaths.length) return responder('Conferir arquivos', [el('p', { className: 'fala', textContent: 'Escolha o(s) HTML(s) do ponto primeiro.' })])
       ocupado(true)
       $('progresso').hidden = true
-      const r = await window.agent.simular({ htmlPaths, forcar: $('forcar').checked })
+      const r = await ipc(() => window.agent.simular({ htmlPaths, forcar: $('forcar').checked }))
       ocupado(false)
       if (!r.ok) return responderErro('Conferir arquivos', r.message)
       ultimoLote = r.lote

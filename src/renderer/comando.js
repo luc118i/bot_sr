@@ -24,15 +24,35 @@
     return iso(d)
   }
 
-  // Data citada na frase, ou null. Sem ano = ano de hoje.
+  // dd/mm em `ano`, ou null se o dia não existe (31/04, 29/02 fora de bissexto...).
+  function montar(ano, mes, dia) {
+    const d = new Date(ano, mes - 1, dia)
+    d.setFullYear(ano) // new Date(99, ...) seria 1999
+    return d.getFullYear() === ano && d.getMonth() === mes - 1 && d.getDate() === dia ? iso(d) : null
+  }
+
+  // Data citada na frase, ou null. Ano com 2 ou 4 dígitos (20xx). Sem ano = a
+  // data mais próxima de hoje: "31/12" dito em 2 de janeiro é o dezembro que
+  // passou; "02/10" dito em 30/09 continua sendo daqui a 2 dias (e vira erro).
   function extrairData(t, hoje) {
-    const m = /\b(\d{1,2})\/(\d{1,2})(?:\/(\d{2,4}))?\b/.exec(t)
+    const m = /\b(\d{1,2})\/(\d{1,2})(?:\/(\d{4}|\d{2}))?(?![\d/])/.exec(t)
     if (m) {
-      const ano = m[3] ? (m[3].length === 2 ? 2000 + Number(m[3]) : Number(m[3])) : deISO(hoje).getFullYear()
-      const d = new Date(ano, Number(m[2]) - 1, Number(m[1]))
-      if (d.getMonth() !== Number(m[2]) - 1) return { invalida: `${m[0]} não é uma data válida.` }
-      return { data: iso(d) }
+      const dia = Number(m[1]), mes = Number(m[2])
+      const invalida = { invalida: `${m[0]} não é uma data válida.` }
+      if (m[3]) {
+        const ano = m[3].length === 2 ? 2000 + Number(m[3]) : Number(m[3])
+        if (ano < 2000 || ano > 2099) return invalida
+        const data = montar(ano, mes, dia)
+        return data ? { data } : invalida
+      }
+      const anoHoje = deISO(hoje).getFullYear()
+      const opcoes = [montar(anoHoje, mes, dia), montar(anoHoje - 1, mes, dia)].filter(Boolean)
+      if (!opcoes.length) return invalida
+      const dist = s => Math.abs(deISO(s) - deISO(hoje))
+      return { data: opcoes.sort((a, b) => dist(a) - dist(b))[0] }
     }
+    // Tem cara de data mas não deu pra ler (ex.: "01/01/202"): nunca cai no "hoje".
+    if (/\d\s*\/\s*\d/.test(t)) return { invalida: 'Data não reconhecida — use dd/mm ou dd/mm/aaaa.' }
     if (/\banteontem\b/.test(t)) return { data: somarDias(hoje, -2) }
     if (/\bontem\b/.test(t)) return { data: somarDias(hoje, -1) }
     if (/\bsemana passada\b/.test(t)) return { data: somarDias(hoje, -7) }

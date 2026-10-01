@@ -31,6 +31,9 @@ const VALIDADE_PLANO_MS = 60 * 60 * 1000
 // pelo relatório .json de cada dia, salvo em relatorios/.
 let ultimaEscrita: EscritaDoDia[] | null = null
 
+// HTMLs do ponto que o operador escolheu no seletor — os únicos que 'simular' lê.
+const htmlsEscolhidos = new Set<string>()
+
 // Planos do último resultado mostrado na tela (gravado ou simulado). A
 // justificativa só aceita células que estavam pendentes NESTES planos.
 let planosNaTela = new Map<string, Plano>()
@@ -255,10 +258,15 @@ function registerIPC(): void {
       properties: ['openFile', 'multiSelections'],
     })
     if (result.canceled || !result.filePaths.length) return null
+    for (const p of result.filePaths) htmlsEscolhidos.add(p)
     return result.filePaths.map(p => ({ path: p, name: path.basename(p) }))
   })
 
   ipcMain.handle('simular', async (_e, params: { htmlPaths: string[]; forcar?: boolean }) => {
+    // Só lê arquivos que ESTA sessão ofereceu pelo seletor — a tela não escolhe caminhos livres.
+    if (!Array.isArray(params?.htmlPaths) || params.htmlPaths.some(p => !htmlsEscolhidos.has(p))) {
+      return { ok: false, message: 'Escolha os arquivos HTML pelo botão "Selecionar HTML…".' }
+    }
     ultimoLote = null
     try {
       const htmls = params.htmlPaths.map(p => ({ arquivo: path.basename(p), html: fs.readFileSync(p, 'utf-8') }))
@@ -279,10 +287,22 @@ function registerIPC(): void {
     if (Date.now() - new Date(lote.geradoEm).getTime() > VALIDADE_PLANO_MS) {
       return { ok: false, message: 'A simulação tem mais de 1 hora — simule de novo antes de escrever.' }
     }
+    // Config inválida (ex.: salva entre a simulação e agora) não pode virar uma
+    // promessa rejeitada — a tela ficaria presa em "Trabalhando…". Nada foi
+    // gravado ainda, então a simulação continua valendo pra tentar de novo.
+    let gw: SheetGateway
+    try { gw = abrirGateway() } catch (err: any) {
+      logger.error('[escrever]', err.message)
+      return { ok: false, message: err.message ?? 'Erro desconhecido' }
+    }
     ultimoLote = null // uma simulação só é aplicada uma vez
-    const { dias, erro } = await executarEscritaLote(abrirGateway(), lote.planos)
-    for (const d of dias) salvarRelatorio(d.plano, 'escrita', { escritas: d.escritas, puladas: d.puladas })
-    mostrarNaTela(lote, 'gravado', registrarGravacao(lote, { dias, erro }))
+    const { dias, erro } = await executarEscritaLote(gw, lote.planos)
+    try {
+      for (const d of dias) salvarRelatorio(d.plano, 'escrita', { escritas: d.escritas, puladas: d.puladas })
+      mostrarNaTela(lote, 'gravado', registrarGravacao(lote, { dias, erro }))
+    } catch (err: any) {
+      logger.error('[escrever] relatório/memória:', err.message) // a planilha já foi gravada; o Desfazer abaixo continua valendo
+    }
     // Mesmo com erro no meio, os dias já gravados ficam disponíveis pro Desfazer.
     ultimaEscrita = dias.some(d => d.escritas.length) ? dias : null
     return {
@@ -312,9 +332,9 @@ function registerIPC(): void {
   ipcMain.handle('desfazer', async () => {
     const alvo = ultimaEscrita
     if (!alvo) return { ok: false, message: 'Nenhuma escrita desta sessão para desfazer.' }
-    const gw = abrirGateway()
     const dias: ({ data: string; aba: string } & ResultadoDesfazer)[] = []
     try {
+      const gw = abrirGateway()
       for (const d of alvo) {
         const r = await desfazerEscrita(gw, d.aba, d.escritas)
         salvarRelatorio(d.plano, 'desfeita', r)
