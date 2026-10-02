@@ -2,14 +2,14 @@ import './envSetup'
 import { app, Tray, Menu, nativeImage, dialog, shell, BrowserWindow, ipcMain, safeStorage } from 'electron'
 import path from 'path'
 import fs from 'fs'
-import { configurarCofre, credenciaisPonto, getConfig, getConfigPath, saveConfig, tipoConexao, type AgentConfig } from './config'
+import { configExiste, configurarCofre, credenciaisPonto, getConfig, getConfigPath, planilhaEmbutida, saveConfig, tipoConexao, type AgentConfig } from './config'
 import { hojeISO } from './core/tempo'
 import { SecullumClient } from './ponto/secullum'
 import { getLogsDir, getRelatoriosDir, logger } from './logger'
 import type { Plano } from './core/planner'
 import { extrairSpreadsheetId } from './sheets/googleSheets'
 import {
-  abrirGateway, desfazerEscrita, executarEscritaLote, gatewayDaConfig, justificar, lerConferencias, lerUltimoResultado, listarHistorico, preencherAutomatico,
+  abrirGateway, desfazerEscrita, executarEscritaLote, gatewayDaConfig, gravarFerias, justificar, lerConferencias, lerUltimoResultado, listarHistorico, planejarFerias, preencherAutomatico,
   registrarConferencias, registrarFeriados, reverterJustificativas, salvarRelatorio, salvarUltimoResultado, semanaDe,
   type EscritaDoDia, type Lote, type ResultadoDesfazer, type ResultadoEscrita,
 } from './service'
@@ -28,6 +28,10 @@ const VALIDADE_PLANO_MS = 60 * 60 * 1000
 // escrita". Escritas mais antigas (ou de antes de reabrir o app) são desfeitas
 // pelo relatório .json de cada dia, salvo em relatorios/.
 let ultimaEscrita: EscritaDoDia[] | null = null
+
+// Última prévia de férias. "Gravar férias" grava ESTES planos (o que o
+// operador viu), desde que seja o mesmo colaborador e período e tenha < 1 h.
+let ultimasFerias: { chave: string; geradoEm: number; planos: Plano[] } | null = null
 
 
 // Planos do último resultado mostrado na tela (gravado ou simulado). A
@@ -136,7 +140,7 @@ function criarJanela(): BrowserWindow {
     })
     if (r === 0) ev.preventDefault()
   })
-  w.on('closed', () => { appWin = null; ultimoLote = null; ultimaEscrita = null; planosNaTela = new Map(); loteNaTela = null })
+  w.on('closed', () => { appWin = null; ultimoLote = null; ultimaEscrita = null; ultimasFerias = null; planosNaTela = new Map(); loteNaTela = null })
   return w
 }
 
@@ -160,10 +164,15 @@ function gatewayOpcional(): SheetGateway | null {
 }
 
 function registerIPC(): void {
-  // Já com os segredos decifrados — a tela de Configurações mostra/edita.
+  // Já com os segredos decifrados — a tela de Configurações mostra/edita. A
+  // planilha que veio no instalador (link + token) NUNCA vai pra tela.
   ipcMain.handle('get-config', () => {
-    if (!fs.existsSync(getConfigPath())) return null
-    try { return getConfig() } catch { return null }
+    if (!configExiste()) return null
+    let cfg: AgentConfig
+    try { cfg = getConfig() } catch { return null }
+    if (!planilhaEmbutida()) return cfg
+    const { apps_script_url: _u, apps_script_token: _t, ...semPlanilha } = cfg
+    return { ...semPlanilha, planilhaEmbutida: true }
   })
 
   ipcMain.handle('testar-ponto', async (_e, cfg: AgentConfig) => {
@@ -231,7 +240,8 @@ function registerIPC(): void {
 
   ipcMain.handle('test-connection', async (_e, cfg: AgentConfig) => {
     try {
-      const gw = gatewayDaConfig({ ...cfg, spreadsheet_id: extrairSpreadsheetId(cfg.spreadsheet_id ?? '') })
+      // A tela não conhece a planilha embutida — o teste usa a do instalador.
+      const gw = gatewayDaConfig({ ...cfg, spreadsheet_id: extrairSpreadsheetId(cfg.spreadsheet_id ?? ''), ...(planilhaEmbutida() ? { conexao: 'apps_script' as const, ...planilhaEmbutida() } : {}) })
       const titulo = await gw.titulo()
       const abas = await gw.listarAbas()
       return { ok: true, message: `Conectado a "${titulo}" (${abas.length} abas).` }
@@ -291,6 +301,35 @@ function registerIPC(): void {
     }
   })
 
+  // Férias: prévia (gravar=false) ou gravação do que a prévia mostrou.
+  ipcMain.handle('ferias', async (_e, params: { adm: string; inicio: string; fim: string; gravar?: boolean }) => {
+    const chave = `${params.adm}|${params.inicio}|${params.fim}`
+    try {
+      const gw = abrirGateway()
+      if (!params.gravar) {
+        const planos = await planejarFerias(gw, params.adm, { inicio: params.inicio, fim: params.fim })
+        ultimasFerias = { chave, geradoEm: Date.now(), planos }
+        return { ok: true, planos }
+      }
+      const previa = ultimasFerias
+      if (!previa || previa.chave !== chave || Date.now() - previa.geradoEm > VALIDADE_PLANO_MS) {
+        return { ok: false, message: 'Veja a prévia das férias de novo antes de gravar.' }
+      }
+      ultimasFerias = null // uma prévia só é gravada uma vez
+      const { dias, erro } = await gravarFerias(gw, previa.planos)
+      try {
+        for (const d of dias) salvarRelatorio(d.plano, 'ferias', { escritas: d.escritas, puladas: d.puladas })
+      } catch (err: any) {
+        logger.error('[ferias] relatório:', err.message) // a planilha já foi gravada; o Desfazer continua valendo
+      }
+      if (dias.some(d => d.escritas.length)) ultimaEscrita = dias
+      return { ok: !erro, message: erro, dias: dias.map(d => ({ data: d.data, aba: d.aba, escritas: d.escritas, puladas: d.puladas })) }
+    } catch (err: any) {
+      logger.error('[ferias]', err.message)
+      return { ok: false, message: err.message ?? 'Erro desconhecido' }
+    }
+  })
+
   ipcMain.handle('desfazer', async () => {
     const alvo = ultimaEscrita
     if (!alvo) return { ok: false, message: 'Nenhuma escrita desta sessão para desfazer.' }
@@ -328,7 +367,7 @@ function registerIPC(): void {
     try {
       const alvos = result.filePaths.map(arq => {
         const { plano, extra } = JSON.parse(fs.readFileSync(arq, 'utf-8')) as { plano: Plano; extra?: ResultadoEscrita }
-        if (!/_(escrita|justificativa)_/.test(path.basename(arq)) || !extra?.escritas) {
+        if (!/_(escrita|justificativa|ferias)_/.test(path.basename(arq)) || !extra?.escritas) {
           throw new Error(`"${path.basename(arq)}" não é o relatório de uma escrita (nome "..._escrita_....json").`)
         }
         return { plano, escritas: extra.escritas }

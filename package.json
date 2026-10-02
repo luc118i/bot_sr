@@ -18,7 +18,7 @@
     "test:tz": "npm run build:ts && node scripts/test-tz.js",
     "test:ui": "npm run build:ts && electron dist/__tests__/ui/runner.js",
     "test:all": "npm run build:ts && npm run test:run && node scripts/test-tz.js && electron dist/__tests__/ui/runner.js",
-    "dist": "npm run build:ts && electron-builder"
+    "dist": "npm run build:ts && node scripts/embutir-planilha.js && electron-builder"
   },
   "dependencies": {
     "cheerio": "^1.0.0",

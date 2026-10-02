@@ -5,6 +5,7 @@ import { AppsScriptGateway } from './sheets/appsScriptGateway'
 import { getDataDir, getRelatoriosDir, logger } from './logger'
 import { CODIGOS, parseCodigo, type Codigo } from './core/codigos'
 import type { OverridesGeral } from './core/configPlanilha'
+import { mesesDoPeriodo, planejarFeriasDoMes, type PeriodoFerias } from './core/ferias'
 import { detectarLayout, nomeAbaDoMes } from './core/layoutMes'
 import { AntesDoCorteError, DiaNaoUtilError, SITUACOES_PENDENTES, contarPendencias, montarPlano, recontarResumo, type Plano } from './core/planner'
 import { pontoDizFeriado, registrosDaApi } from './core/pontoApi'
@@ -386,6 +387,42 @@ export async function executarEscritaLote(gw: SheetGateway, planos: Plano[], pro
   return { dias, erro: null }
 }
 
+// ── Férias ──────────────────────────────────────────────────────────────────
+// Um plano por mês do período (cada mês é uma aba). Se um mês der problema
+// (aba não existe, cabeçalho quebrado, sem linha), NADA é planejado: férias
+// gravadas pela metade confundem mais do que ajudam.
+export async function planejarFerias(gw: SheetGateway, adm: string, periodo: PeriodoFerias, now: Date = new Date()): Promise<Plano[]> {
+  const meses = mesesDoPeriodo(periodo)
+  const titulo = await gw.titulo()
+  const abas = await gw.listarAbas()
+  const planos: Plano[] = []
+  for (const m of meses) {
+    const erroAno = conferirAno(titulo, m.ano)
+    if (erroAno) throw new Error(erroAno)
+    const { grid, layout } = await carregarMes(gw, abas, m.ano, m.mes)
+    planos.push(planejarFeriasDoMes({ adm, ...m, layout, grid, now }))
+  }
+  logger.info(`[ferias] ADM ${adm} ${periodo.inicio}..${periodo.fim}: ${planos.map(p => `${p.aba} ${p.escritas.length} a gravar`).join(', ')}`)
+  return planos
+}
+
+// Grava os planos de férias (mês a mês). Relê cada célula antes de escrever,
+// como no preenchimento diário — o que alguém preencheu nesse meio tempo fica.
+export async function gravarFerias(gw: SheetGateway, planos: Plano[]): Promise<{ dias: EscritaDoDia[]; erro: string | null }> {
+  const dias: EscritaDoDia[] = []
+  for (const plano of planos) {
+    if (!plano.escritas.length) continue
+    try {
+      const r = await executarEscrita(gw, plano)
+      dias.push({ data: plano.data, aba: plano.aba, plano, ...r })
+    } catch (err: any) {
+      logger.error(`[ferias] ${plano.aba}: ${err.message}`)
+      return { dias, erro: `Falhou ao gravar a aba ${plano.aba}: ${err.message}. Já gravado: ${dias.map(d => d.aba).join(', ') || 'nada'}.` }
+    }
+  }
+  return { dias, erro: null }
+}
+
 export interface ResultadoDesfazer {
   apagadas: string[]
   mantidas: { celula: string; valorEncontrado: string; escritoPeloBot: string }[]
@@ -413,13 +450,13 @@ export async function desfazerEscrita(gw: SheetGateway, aba: string, escritas: R
 
 // "Atividade recente" da tela inicial: as últimas escritas e desfeitas, lidas
 // dos relatórios que o próprio bot salva (um .json por dia gravado/desfeito).
-export interface ItemHistorico { tipo: 'escrita' | 'justificativa' | 'desfeita'; data: string; aba: string; celulas: number; quando: string }
+export interface ItemHistorico { tipo: 'escrita' | 'justificativa' | 'ferias' | 'desfeita'; data: string; aba: string; celulas: number; quando: string }
 
 export function listarHistorico(limite = 8): ItemHistorico[] {
   const dir = getRelatoriosDir()
   if (!fs.existsSync(dir)) return []
   const arquivos = fs.readdirSync(dir)
-    .map(nome => ({ nome, m: /^(\d{4}-\d{2}-\d{2})_(escrita|justificativa|desfeita)_.*\.json$/.exec(nome) }))
+    .map(nome => ({ nome, m: /^(\d{4}-\d{2}-\d{2})_(escrita|justificativa|ferias|desfeita)_.*\.json$/.exec(nome) }))
     .filter(a => a.m)
     .map(a => ({ ...a, mtime: fs.statSync(path.join(dir, a.nome)).mtimeMs }))
     .sort((x, y) => y.mtime - x.mtime)
@@ -439,8 +476,8 @@ export function listarHistorico(limite = 8): ItemHistorico[] {
 export function salvarRelatorio(plano: Plano, modo: ModoRelatorio, extra?: ResultadoEscrita | ResultadoDesfazer): string {
   const dir = getRelatoriosDir()
   fs.mkdirSync(dir, { recursive: true })
-  // Justificativas do mesmo plano podem ser várias — cada uma no seu arquivo.
-  const ts = (modo === 'justificativa' ? new Date().toISOString() : plano.geradoEm).replace(/[:.]/g, '-')
+  // Justificativas do mesmo plano (e férias que começam no mesmo dia) podem ser várias — cada uma no seu arquivo.
+  const ts = (modo === 'justificativa' || modo === 'ferias' ? new Date().toISOString() : plano.geradoEm).replace(/[:.]/g, '-')
   const base = path.join(dir, `${plano.data}_${modo}_${ts}`)
   fs.writeFileSync(`${base}.txt`, relatorioTexto(plano, modo) + resumoExtra(extra), 'utf-8')
   fs.writeFileSync(`${base}.json`, JSON.stringify({ plano, extra }, null, 2), 'utf-8')

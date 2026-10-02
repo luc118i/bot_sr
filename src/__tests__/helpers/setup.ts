@@ -13,6 +13,8 @@ process.env['DATA_DIR'] = raiz
 process.env['REGRAS_PATH'] = path.join(raiz, 'regras.json')
 process.env['AGENT_CONFIG_PATH'] = path.join(raiz, 'config.json')
 process.env['LOG_TO_CONSOLE'] = '0'
+// Nunca a planilha embutida de um build anterior (dist/embutido.json) — teste que precisa dela cria a sua.
+process.env['EMBUTIDO_PATH'] = path.join(raiz, 'embutido.json')
 
 process.on('exit', () => {
   try { fs.rmSync(raiz, { recursive: true, force: true }) } catch { /* Windows às vezes segura o arquivo */ }

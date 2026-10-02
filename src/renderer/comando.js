@@ -78,6 +78,7 @@
     if (/histor|atividade/.test(t)) return { acao: 'historico' }
     if (/\bpendenc|\brevis|\batenc/.test(t)) return { acao: 'pendencias' }
     if (/desfaz/.test(t)) return { acao: 'desfazer' }
+    if (/\bferias\b/.test(t)) return { acao: 'ferias' }
 
     const achou = extrairData(t, hoje)
     if (achou && achou.invalida) return { acao: 'ajuda', erro: achou.invalida }

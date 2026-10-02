@@ -5,6 +5,9 @@ release/
 
 # Credenciais e configuração local (service account fica aqui, em base64)
 config.json
+# Link + token do Apps Script embutidos no instalador (npm run dist) — NUNCA versionar
+planilha.local.json
+embutido.json
 *.service-account.json
 .env
 .env.*

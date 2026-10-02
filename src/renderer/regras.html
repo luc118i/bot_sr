@@ -176,7 +176,10 @@
       i.addEventListener('blur', () => aplicar(true))
     }
 
-    function input(tipo, valor, onChange) {
+    // Exceção permanente não força "." nem "P": pontual/atraso vem do ponto de cada dia.
+    const CODIGOS_PERMANENTE = CODIGOS.filter(c => c !== '.' && c !== 'P')
+
+    function input(tipo, valor, onChange, codigos = CODIGOS) {
       if (tipo === 'hora') {
         const i = el('input', { type: 'text', className: 'hora', value: valor || '', placeholder: 'hh:mm', maxLength: 6, autocomplete: 'off' })
         ligarHora(i, onChange)
@@ -191,7 +194,7 @@
       }
       if (tipo === 'codigo') {
         const s = el('select')
-        for (const c of CODIGOS) s.append(el('option', { value: c, textContent: c || '—' }))
+        for (const c of codigos) s.append(el('option', { value: c, textContent: c || '—' }))
         s.value = valor || ''
         s.onchange = () => { onChange(s.value); marcar() }
         return s
@@ -216,8 +219,16 @@
           ? el('span', { className: 'ter', style: 'font-size:13px', textContent: 'todo dia' })
           : input(tipo, linha[k], v => {
             linha[k] = v
-            if (tipo === 'quando') { if (v === 'sempre') linha.data = ''; render(nome) }
-          })
+            if (tipo === 'quando') {
+              if (v === 'sempre') { linha.data = ''; if (!CODIGOS_PERMANENTE.includes(linha.codigo || '')) linha.codigo = '' }
+              render(nome)
+            }
+          }, linha.recorrente === 'sempre' ? CODIGOS_PERMANENTE : CODIGOS)
+        // Regra salva antes desta correção com "." ou "P" numa permanente: tira o código e pede pra salvar.
+        if (nome === 'excecoes' && linha.recorrente === 'sempre' && !CODIGOS_PERMANENTE.includes(linha.codigo || '')) {
+          linha.codigo = ''
+          setTimeout(marcar)
+        }
         body.append(el('tr', {},
           ...cols.map(([k, , tipo]) => el('td', {}, celula(k, tipo))),
           el('td', { className: 'del' }, el('button', { className: 'x', title: 'Remover', textContent: '×', onclick: () => { dados[nome].splice(idx, 1); render(nome); marcar() } })),

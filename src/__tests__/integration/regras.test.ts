@@ -256,6 +256,12 @@ describe('validarRegras', () => {
     assert.match(r.avisos.join(), /vale no lugar do horário individual/)
   })
 
+  it('exceção permanente com código "." ou "P" bloqueia o salvamento, explicando', () => {
+    assert.match(v({ excecoes: [exc({ entrada_prevista: '09:00', codigo: '.' })] }).erros.join(), /não pode forçar "\."/)
+    assert.match(v({ excecoes: [exc({ codigo: 'P' })] }).erros.join(), /não pode forçar "P"/)
+    assert.deepEqual(v({ excecoes: [exc({ codigo: 'FO' })] }).erros, []) // folga fixa continua valendo
+  })
+
   it('exceção permanente vazia (sem entrada nem código) bloqueia', () => {
     assert.match(v({ excecoes: [exc({})] }).erros.join(), /não muda nada/)
   })

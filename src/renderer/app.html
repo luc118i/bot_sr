@@ -43,6 +43,11 @@
     .dia-mini .n { font-family: var(--mono); font-size: 13px; color: #2B2B30; }
     .dia-mini .nota { font-size: 12px; }
     .acoes-linha { display: flex; gap: 8px; flex-wrap: wrap; }
+    .form-ferias { display: flex; gap: 12px; flex-wrap: wrap; align-items: flex-end; }
+    .form-ferias label { display: flex; flex-direction: column; gap: 4px; font-size: 13px; font-weight: 500; color: var(--texto-2); }
+    .form-ferias .quem { flex: 1 1 280px; } .form-ferias .quem input { width: 100%; }
+    .ferias-mes { padding: 10px 12px; border-radius: 12px; background: var(--superficie-2); border: 1px solid #EEEEEB; display: flex; flex-direction: column; gap: 4px; font-size: 13px; color: var(--texto-2); }
+    .ferias-mes b { color: var(--texto); font-size: 14px; }
     .grade { display: grid; grid-template-columns: minmax(0, 2fr) minmax(0, 1fr); gap: 24px; align-items: start; }
     .lateral { display: flex; flex-direction: column; gap: 24px; }
     .kpis { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); border-top: 1px solid #EEEEEB; border-bottom: 1px solid #EEEEEB; margin-bottom: 20px; }
@@ -148,6 +153,7 @@
       <div class="chips" id="chips">
         <button class="chip" data-cmd="dia">Preencher dia</button>
         <button class="chip" data-cmd="semana">Conferir semana</button>
+        <button class="chip" data-cmd="ferias">Lançar férias</button>
         <button class="chip" data-cmd="pendencias">Pendências de revisão</button>
         <button class="chip" data-cmd="historico">Ver histórico</button>
         <button class="chip" data-cmd="relatorios">Gerar relatório</button>
@@ -340,13 +346,14 @@
       if (r.acao === 'relatorios') return window.agent.abrirRelatorios()
       if (r.acao === 'historico') { carregarAtividade(); return $('atividade').scrollIntoView({ behavior: 'smooth', block: 'center' }) }
       if (r.acao === 'desfazer') return desfazerAnterior()
+      if (r.acao === 'ferias') return abrirFerias(texto)
       if (r.acao === 'pendencias') {
         if (!ultimoLote) return responder(texto, [el('p', { className: 'fala', textContent: 'Ainda não há pendências nesta sessão. Rode "Preencher dia" ou "Conferir semana" e eu listo quem precisa de revisão.' })])
         return revisarDeNovo()
       }
       responder(texto, [
         el('p', { className: 'fala', textContent: r.erro || 'Ainda não entendi esse pedido.' }),
-        el('div', { className: 'sec', style: 'font-size:13px', textContent: 'Experimente: "preencher hoje", "conferir semana de 21/09", "simular ontem", "pendências", "abrir regras".' }),
+        el('div', { className: 'sec', style: 'font-size:13px', textContent: 'Experimente: "preencher hoje", "conferir semana de 21/09", "simular ontem", "lançar férias", "pendências", "abrir regras".' }),
       ])
     }
 
@@ -633,6 +640,99 @@
         el('div', { className: 'icone', html: OK }), el('b', { textContent: 'Nada pendente' }), el('span', { textContent: 'Quando algo precisar de você, aparece aqui.' }))]))
     }
 
+    // ── férias: FE em todos os dias úteis do período (padrão: o mês todo) ──
+    function fimDoMes(d) { return isoDe(new Date(d.getFullYear(), d.getMonth() + 1, 0)) }
+    function dataCurta(iso) { const d = deISO(iso); return `${String(d.getDate()).padStart(2, '0')}/${String(d.getMonth() + 1).padStart(2, '0')}` }
+    async function abrirFerias(texto) {
+      // Lista de colaboradores: a última lida da planilha (a mesma de Horários e regras).
+      let colabs = [], setores = []
+      try {
+        const r = await window.agent.regrasCarregar()
+        colabs = (r && r.cache && r.cache.colaboradores) || []
+        setores = (r && r.regras && r.regras.setores) || []
+      } catch { /* sem lista: digita o ADM */ }
+      const meus = colabs.filter(c => c.ativo && (!setores.length || setores.includes(c.setor)))
+      const lista = el('datalist', { id: 'feriasColabs' }, ...meus.map(c => el('option', { value: `${c.adm} — ${c.nome}` })))
+      const quem = el('input', { type: 'text', placeholder: meus.length ? 'Digite o nome ou o ADM' : 'ADM do colaborador', 'aria-label': 'Colaborador' })
+      quem.setAttribute('list', 'feriasColabs')
+      const h = deISO(hojeISO())
+      const ini = el('input', { type: 'date', value: isoDe(new Date(h.getFullYear(), h.getMonth(), 1)), 'aria-label': 'Primeiro dia de férias' })
+      const fim = el('input', { type: 'date', value: fimDoMes(h), 'aria-label': 'Último dia de férias' })
+      const mesInteiro = desloc => () => {
+        const d = new Date(h.getFullYear(), h.getMonth() + desloc, 1)
+        ini.value = isoDe(d); fim.value = fimDoMes(d)
+      }
+      const saida = el('div', { style: 'display:flex;flex-direction:column;gap:10px' })
+      const btn = el('button', { className: 'btn primario', type: 'submit', textContent: 'Ver prévia' })
+      const form = el('form', { className: 'form-ferias', autocomplete: 'off' },
+        el('label', { className: 'quem' }, 'Colaborador', quem),
+        el('label', {}, 'De', ini),
+        el('label', {}, 'Até', fim),
+        btn)
+      form.addEventListener('submit', async e => {
+        e.preventDefault()
+        const adm = (quem.value.split('—')[0] || '').trim()
+        if (!adm) return quem.focus()
+        if (!ini.value || !fim.value) return
+        btn.disabled = true
+        ocupado(true, 'Lendo a planilha…')
+        const r = await ipc(() => window.agent.ferias({ adm, inicio: ini.value, fim: fim.value }))
+        ocupado(false)
+        btn.disabled = false
+        renderPreviaFerias(saida, r, { adm, nome: quem.value, inicio: ini.value, fim: fim.value })
+      })
+      responder(texto, [
+        el('p', { className: 'fala', textContent: 'Quem vai sair de férias? Eu gravo FE em todos os dias do período — domingos e feriados ficam de fora, e nada que já estiver preenchido é apagado.' }),
+        lista, form,
+        el('div', { className: 'acoes-linha' },
+          el('button', { className: 'btn pequeno', type: 'button', textContent: 'Este mês', onClick: mesInteiro(0) }),
+          el('button', { className: 'btn pequeno', type: 'button', textContent: 'Próximo mês', onClick: mesInteiro(1) })),
+        saida,
+      ])
+      quem.focus()
+    }
+
+    function renderPreviaFerias(saida, r, pedido) {
+      if (!r.ok) return saida.replaceChildren(el('div', { className: 'alerta erro' }, el('span', { className: 'ponto' }), el('div', {}, el('b', { textContent: 'Não deu pra preparar as férias' }), el('span', { textContent: r.message }))))
+      const total = r.planos.reduce((s, p) => s + p.escritas.length, 0)
+      const primeiro = r.planos.flatMap(p => p.itens)[0]
+      const nome = (primeiro && primeiro.nomePlanilha) || pedido.nome
+      const meses = r.planos.map(p => {
+        const conferem = p.itens.filter(i => i.situacao === 'confere').length
+        const outros = p.itens.filter(i => i.situacao === 'ja_lancado')
+        return el('div', { className: 'ferias-mes' },
+          el('b', { textContent: `${p.aba}: ${plural(p.escritas.length, 'dia a gravar', 'dias a gravar')}` }),
+          conferem ? el('span', { textContent: `${plural(conferem, 'dia já está', 'dias já estão')} com FE` }) : null,
+          outros.length ? el('span', { style: 'color:#8A4F00', textContent: `Não mexo (já preenchidos): ${outros.map(i => i.motivo).join('; ')}` }) : null,
+          ...p.avisos.filter(a => /^Não preenchidos/.test(a)).map(a => el('span', { className: 'ter', textContent: a })))
+      })
+      const frase = el('p', { className: 'fala' }, el('b', { textContent: nome + ': ' }),
+        total ? `${plural(total, 'dia', 'dias')} de férias para gravar entre ${dataCurta(pedido.inicio)} e ${dataCurta(pedido.fim)}.` : 'nada a gravar nesse período — os dias úteis já estão preenchidos.')
+      const acoes = el('div', { className: 'acoes-linha' })
+      if (total) {
+        const gravar = el('button', { className: 'btn primario', textContent: `Gravar férias (${plural(total, 'dia', 'dias')})` })
+        gravar.onclick = async () => {
+          if (!confirm(`Gravar FE em ${plural(total, 'dia', 'dias')} para ${nome}?\n\nCélulas que alguém preencher nesse meio tempo serão puladas.`)) return
+          gravar.disabled = true
+          ocupado(true, 'Gravando…')
+          const g = await ipc(() => window.agent.ferias({ adm: pedido.adm, inicio: pedido.inicio, fim: pedido.fim, gravar: true }))
+          ocupado(false)
+          const n = (g.dias || []).reduce((s, d) => s + d.escritas.length, 0)
+          const puladas = (g.dias || []).flatMap(d => d.puladas)
+          saida.replaceChildren(
+            g.ok || n
+              ? el('p', { className: 'fala' }, el('b', { textContent: 'Pronto. ' }), `Gravei FE em ${plural(n, 'dia', 'dias')} para ${nome}.`, puladas.length ? ` ${plural(puladas.length, 'célula foi pulada', 'células foram puladas')} (alguém preencheu antes).` : '')
+              : null,
+            !g.ok ? el('div', { className: 'alerta erro' }, el('span', { className: 'ponto' }), el('div', {}, el('b', { textContent: 'Não consegui concluir' }), el('span', { textContent: g.message }))) : null,
+            n ? el('div', { className: 'acoes-linha' }, el('button', { className: 'btn fantasma', textContent: 'Desfazer', onClick: desfazerUltima })) : null)
+          if (n) toast(`Férias gravadas: ${plural(n, 'dia', 'dias')}`, { rotulo: 'Desfazer', fn: desfazerUltima })
+          carregarAtividade()
+        }
+        acoes.append(gravar)
+      }
+      saida.replaceChildren(frase, ...meses, acoes)
+    }
+
     // ── atividade recente ──
     async function carregarAtividade() {
       try { conferencias = (await window.agent.conferencias()) || {} } catch { /* app antigo aberto */ }
@@ -640,9 +740,9 @@
       renderAtencao()
       const h = await window.agent.historico()
       $('atividade').replaceChildren(...(h.length ? h.map(e => el('div', { className: 'evento' },
-        el('div', { className: 'trilho' }, el('i', { style: `background:${e.tipo === 'escrita' ? '#2451D6' : e.tipo === 'justificativa' ? '#177245' : '#E3A13B'}` }), el('u')),
+        el('div', { className: 'trilho' }, el('i', { style: `background:${e.tipo === 'escrita' ? '#2451D6' : e.tipo === 'justificativa' ? '#177245' : e.tipo === 'ferias' ? '#7A5AF8' : '#E3A13B'}` }), el('u')),
         el('div', { className: 'txt' },
-          el('b', { textContent: e.tipo === 'escrita' ? `${nomeDia(e.data)} preenchido · ${plural(e.celulas, 'célula', 'células')}` : e.tipo === 'justificativa' ? `Justificativa · ${nomeDia(e.data)} · ${plural(e.celulas, 'célula', 'células')}` : `Escrita desfeita · ${nomeDia(e.data)} · ${plural(e.celulas, 'célula', 'células')}` }),
+          el('b', { textContent: e.tipo === 'escrita' ? `${nomeDia(e.data)} preenchido · ${plural(e.celulas, 'célula', 'células')}` : e.tipo === 'ferias' ? `Férias · ${e.aba} · ${plural(e.celulas, 'dia', 'dias')}` : e.tipo === 'justificativa' ? `Justificativa · ${nomeDia(e.data)} · ${plural(e.celulas, 'célula', 'células')}` : `Escrita desfeita · ${nomeDia(e.data)} · ${plural(e.celulas, 'célula', 'células')}` }),
           el('span', { textContent: quando(e.quando) })))) : [el('div', { className: 'vazio', style: 'padding:8px 0 4px' },
         el('b', { textContent: 'Nenhuma execução ainda' }), el('span', { textContent: 'Quando você preencher um dia, ele aparece aqui.' }))]))
     }

@@ -128,6 +128,18 @@ describe('montarPlano: proteções', () => {
     assert.match(p.itens.find(i => i.adm === '2')!.motivo, /exceção permanente.*não aparece no ponto/)
   })
 
+  it('caso real: permanente 09:00 salva com código "." — decide pelo ponto de cada dia', () => {
+    const c = cfgDe({ excecoes: [['data', 'adm', 'entrada_prevista', 'codigo', 'recorrente'], ['', '1', '09:00', '.', 'sempre']] })
+    const dec = (h: string) => montarPlano(entrada([['1', 'CARLOS']], [reg('CARLOS', h)], { cfg: c })).escritas[0]?.codigo
+    assert.equal(dec('08:56'), '.')   // antes do previsto, dentro da tolerância
+    assert.equal(dec('08:30'), '.')   // chegar cedo nunca é atraso
+    assert.equal(dec('09:05'), '.')   // limite da tolerância (inclusivo)
+    assert.equal(dec('09:06'), 'P')
+    assert.equal(dec('13:10'), 'P')   // antes era "." forçado — o bug
+    const p = montarPlano(entrada([['1', 'CARLOS']], [reg('CARLOS', '13:10')], { cfg: c }))
+    assert.doesNotMatch(p.itens[0]!.motivo, /forçado/)
+  })
+
   it('código forçado ganha do ponto (ex.: atestado mesmo tendo batido)', () => {
     const c = cfgDe({ excecoes: [['data', 'adm', 'entrada_prevista', 'codigo'], ['2026-09-28', '1', '', 'AC']] })
     const p = montarPlano(entrada([['1', 'ANA']], [reg('ANA', '09:30')], { cfg: c }))

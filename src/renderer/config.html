@@ -57,7 +57,8 @@
       </div>
 
       <section class="cartao">
-        <div style="display:flex;gap:10px">
+        <div class="alerta ok" id="boxEmbutida" style="display:none"><span class="ponto"></span><div><b>Planilha da empresa já configurada</b><span>Veio pronta neste instalador — não há nada a preencher aqui. Use "Testar conexão" para conferir.</span></div></div>
+        <div style="display:flex;gap:10px" id="escolhaConexao">
           <label class="opcao"><input type="radio" name="conexao" value="apps_script" checked /><div><b>Apps Script</b><span>Link da planilha + token. Não precisa de Google Cloud.</span></div></label>
           <label class="opcao"><input type="radio" name="conexao" value="service_account" /><div><b>Service Account</b><span>Arquivo JSON do Google Cloud.</span></div></label>
         </div>
@@ -163,7 +164,7 @@
     const conexao = () => document.querySelector('input[name="conexao"]:checked').value
     // Mantém campos que esta tela não edita.
     const current = () => ({
-      ...cfgSalva,
+      ...(({ planilhaEmbutida, ...resto }) => resto)(cfgSalva),
       conexao: conexao(),
       apps_script_url: $('asUrl').value.trim(),
       apps_script_token: $('asToken').value.trim(),
@@ -206,9 +207,13 @@
     $('btnTestarPonto').onclick = () => testar($('btnTestarPonto'), $('msgPonto'), window.agent.testarPonto, 'Login ok')
     $('btnTest').onclick = () => testar($('btnTest'), $('msg'), window.agent.testConnection, 'Conectado')
 
+    // Planilha embutida no instalador: link e token não aparecem nem podem ser trocados aqui.
+    let embutida = false
     function mostrarConexao() {
-      $('boxAppsScript').style.display = conexao() === 'apps_script' ? 'flex' : 'none'
-      $('boxServiceAccount').style.display = conexao() === 'service_account' ? 'flex' : 'none'
+      $('boxEmbutida').style.display = embutida ? 'flex' : 'none'
+      $('escolhaConexao').style.display = embutida ? 'none' : 'flex'
+      $('boxAppsScript').style.display = !embutida && conexao() === 'apps_script' ? 'flex' : 'none'
+      $('boxServiceAccount').style.display = !embutida && conexao() === 'service_account' ? 'flex' : 'none'
     }
     document.querySelectorAll('input[name="conexao"]').forEach(r => { r.onchange = mostrarConexao })
 
@@ -233,7 +238,10 @@
       $('pontoSenha').value = cfg.ponto_senha || ''
       const tipo = cfg.conexao || (cfg.apps_script_url || !sa ? 'apps_script' : 'service_account')
       document.querySelector(`input[name="conexao"][value="${tipo}"]`).checked = true
+      embutida = !!cfg.planilhaEmbutida
       mostrarConexao()
+      // Com a planilha pronta, o que falta é o login do ponto: abre direto nessa aba.
+      if (embutida) document.querySelector('.aba[data-tab="ponto"]').click()
       if (sa) {
         try { $('saName').textContent = 'Configurada — ' + JSON.parse(atob(sa)).client_email } catch { $('saName').textContent = 'Configurada' }
       }

@@ -71,6 +71,31 @@ function fecharSegredos(cfg: AgentConfig): Record<string, any> {
   return out
 }
 
+// ── Planilha embutida no instalador ─────────────────────────────────────────
+// `npm run dist` grava dist/embutido.json com o link + token do Apps Script da
+// empresa (vindos de planilha.local.json, fora do Git). Com ele, o operador só
+// configura o próprio login do ponto: a planilha já vem pronta e o link/token
+// nunca aparecem na tela nem são gravados no config.json dele.
+export interface PlanilhaEmbutida { apps_script_url: string; apps_script_token: string }
+
+export function planilhaEmbutida(): PlanilhaEmbutida | null {
+  const p = process.env['EMBUTIDO_PATH'] ?? path.join(__dirname, 'embutido.json')
+  try {
+    const e = JSON.parse(fs.readFileSync(p, 'utf-8'))
+    return e.apps_script_url && e.apps_script_token ? { apps_script_url: e.apps_script_url, apps_script_token: e.apps_script_token } : null
+  } catch { return null }
+}
+
+function comEmbutida(cfg: AgentConfig): AgentConfig {
+  const e = planilhaEmbutida()
+  return e ? { ...cfg, conexao: 'apps_script', ...e } : cfg
+}
+
+/** Já dá pra usar o app sem abrir as Configurações? (há config.json ou a planilha veio no instalador) */
+export function configExiste(): boolean {
+  return fs.existsSync(getConfigPath()) || !!planilhaEmbutida()
+}
+
 // ── Leitura/gravação ────────────────────────────────────────────────────────
 
 // No Electron, envSetup.ts aponta pra pasta userData; na CLI, ./config.json
@@ -88,19 +113,21 @@ export function clearCachedConfig(): void {
 export function getConfig(): AgentConfig {
   if (cachedConfig) return cachedConfig
   const p = getConfigPath()
-  if (!fs.existsSync(p)) {
+  let bruto: Record<string, any> = {}
+  if (fs.existsSync(p)) {
+    try {
+      bruto = JSON.parse(fs.readFileSync(p, 'utf-8'))
+    } catch (err: any) {
+      throw new Error(`Erro ao ler config.json: ${err.message}`)
+    }
+  } else if (!planilhaEmbutida()) {
     throw new Error(
       `Arquivo de configuração não encontrado em:\n${p}\n\n` +
       `Abra as Configurações do agente (ou copie o config.example.json para esse caminho).`,
     )
   }
-  let bruto: Record<string, any>
-  try {
-    bruto = JSON.parse(fs.readFileSync(p, 'utf-8'))
-  } catch (err: any) {
-    throw new Error(`Erro ao ler config.json: ${err.message}`)
-  }
-  const parsed = abrirSegredos(bruto)
+  const parsed = comEmbutida(abrirSegredos(bruto))
+  parsed.google_service_account_json_b64 ??= ''
   parsed.spreadsheet_id = extrairSpreadsheetId(parsed.spreadsheet_id ?? '')
   cachedConfig = parsed
   return parsed
@@ -109,7 +136,9 @@ export function getConfig(): AgentConfig {
 export function saveConfig(cfg: AgentConfig): void {
   const p = getConfigPath()
   fs.mkdirSync(path.dirname(p), { recursive: true })
-  const limpo = { ...cfg, spreadsheet_id: extrairSpreadsheetId(cfg.spreadsheet_id ?? '') }
+  const limpo: AgentConfig = { ...cfg, spreadsheet_id: extrairSpreadsheetId(cfg.spreadsheet_id ?? '') }
+  // A planilha do instalador não vai pro config.json do operador.
+  if (planilhaEmbutida()) { delete limpo.conexao; delete limpo.apps_script_url; delete limpo.apps_script_token }
   fs.writeFileSync(p, JSON.stringify(fecharSegredos(limpo), null, 2), 'utf-8')
   clearCachedConfig()
 }

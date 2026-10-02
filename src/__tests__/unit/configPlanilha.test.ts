@@ -144,6 +144,23 @@ describe('exceções permanentes ("Sempre, até remover")', () => {
     assert.equal(codigoForcado(c, '143', '2026-09-28')?.codigoForcado, 'AT')
   })
 
+  it('permanente com código "." ou "P": código ignorado (vem do ponto de cada dia), entrada mantida', () => {
+    const c = cfg(['', '2376', '09:00', '.', '', 'sempre'])
+    assert.match(c.avisos.join(), /não pode forçar "\."/)
+    assert.equal(codigoForcado(c, '2376', '2026-10-01'), null)
+    assert.equal(resolverHorario(c, '2376', '2026-10-01').entradaMin, 9 * 60)
+    // Só "P", sem entrada: não sobra nada → item ignorado (com o aviso do código, sem repetir).
+    const soP = cfg(['', '2376', '', 'P', '', 'sempre'])
+    assert.equal(soP.excecoes.length, 0)
+    assert.equal(soP.avisos.length, 1)
+  })
+
+  it('"." e "P" continuam valendo numa exceção de UM dia (o operador sabe o que aconteceu)', () => {
+    const c = cfg(['2026-09-28', '2376', '', 'P', '', ''])
+    assert.deepEqual(c.avisos, [])
+    assert.equal(codigoForcado(c, '2376', '2026-09-28')?.codigoForcado, 'P')
+  })
+
   it('permanente sem entrada nem código não muda nada → aviso', () => {
     assert.match(cfg(['', '771', '', '', 'só obs', 'sempre']).avisos.join(), /permanente sem entrada prevista nem código/)
   })

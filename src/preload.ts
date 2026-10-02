@@ -14,6 +14,7 @@ contextBridge.exposeInMainWorld('agent', {
   },
   escrever: () => ipcRenderer.invoke('escrever'),
   justificar: (params: unknown) => ipcRenderer.invoke('justificar', params),
+  ferias: (params: unknown) => ipcRenderer.invoke('ferias', params),
   desfazer: () => ipcRenderer.invoke('desfazer'),
   desfazerDeRelatorio: () => ipcRenderer.invoke('desfazer-de-relatorio'),
   abrirRelatorios: () => ipcRenderer.invoke('abrir-relatorios'),

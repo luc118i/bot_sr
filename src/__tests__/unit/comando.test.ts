@@ -20,6 +20,8 @@ describe('comando: frases do dia a dia', () => {
     assert.deepEqual(c('semana passada sem gravar', HOJE), { acao: 'semana', data: '2026-09-23', simular: true })
     assert.deepEqual(c('28/09/2026', HOJE), { acao: 'dia', data: '2026-09-28', simular: false })
     assert.equal(c('Pendências de revisão', HOJE).acao, 'pendencias')
+    assert.equal(c('Lançar férias', HOJE).acao, 'ferias')
+    assert.equal(c('ferias da Ana em outubro', HOJE).acao, 'ferias')
     assert.equal(c('ver histórico', HOJE).acao, 'historico')
     assert.equal(c('Gerar relatório', HOJE).acao, 'relatorios')
     assert.equal(c('mudar horário do Pedro', HOJE).acao, 'regras')

@@ -22,6 +22,7 @@ app.setPath('userData', USERDATA)
 app.getAppPath = () => RAIZ_PROJETO // main.ts acha src/renderer e dist/preload.js a partir daqui
 process.env['REGRAS_PATH'] = path.join(USERDATA, 'regras.json')
 process.env['LOG_TO_CONSOLE'] = '0'
+process.env['EMBUTIDO_PATH'] = path.join(DIR, 'embutido.json') // sem planilha de instalador (a config vem do config.json do teste)
 
 // ── mundo simulado ──────────────────────────────────────────────────────────
 const pl = planilhaDoCenario() // também grava o regras.json do cenário

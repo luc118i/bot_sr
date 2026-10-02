@@ -146,16 +146,24 @@ export function parseConfigPlanilha(g: GridsConfig, overrides: OverridesGeral = 
     const data = sempre ? null : parseDataPlanilha(r['data'] ?? '')
     const adm = normalizeAdm(r['adm'])
     const entradaPrev = r['entrada_prevista'] ? parseHora(r['entrada_prevista']) : null
-    const codigo = r['codigo'] ? parseCodigo(r['codigo']) : null
+    let codigo = r['codigo'] ? parseCodigo(r['codigo']) : null
     if ((!sempre && !data) || !adm) {
       avisos.push(`${SECOES_CONFIG.excecoes}, item ${item}: data ou colaborador inválidos — item ignorado.`)
       return
     }
-    if (sempre && !r['entrada_prevista'] && !r['codigo']) {
-      avisos.push(`${SECOES_CONFIG.excecoes}, item ${item}: exceção permanente sem entrada prevista nem código — não muda nada; item ignorado.`)
+    // "." e "P" dependem do ponto de CADA dia: forçados para sempre, marcariam
+    // pontual quem bateu 13:10. Na permanente vale só a entrada prevista.
+    let codigoIgnorado = false
+    if (sempre && (codigo === '.' || codigo === 'P')) {
+      avisos.push(`${SECOES_CONFIG.excecoes}, item ${item}: exceção permanente não pode forçar "${codigo}" (pontual ou atraso vem do ponto de cada dia) — código ignorado; deixe Código vazio e use só a entrada prevista.`)
+      codigo = null
+      codigoIgnorado = true
+    }
+    if (sempre && !r['entrada_prevista'] && !codigo) {
+      if (!codigoIgnorado) avisos.push(`${SECOES_CONFIG.excecoes}, item ${item}: exceção permanente sem entrada prevista nem código — não muda nada; item ignorado.`)
       return
     }
-    if (r['codigo'] && !codigo) {
+    if (r['codigo'] && !codigo && !codigoIgnorado) {
       avisos.push(`${SECOES_CONFIG.excecoes}, item ${item}: código "${r['codigo']}" não existe na legenda — item ignorado.`)
       return
     }

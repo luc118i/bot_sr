@@ -4,7 +4,7 @@ import { beforeEach, describe, it } from 'node:test'
 import assert from 'node:assert/strict'
 import fs from 'fs'
 import {
-  clearCachedConfig, configurarCofre, credenciaisPonto, getConfig, getConfigPath, saveConfig, tipoConexao, type AgentConfig,
+  clearCachedConfig, configExiste, configurarCofre, credenciaisPonto, getConfig, getConfigPath, planilhaEmbutida, saveConfig, tipoConexao, type AgentConfig,
 } from '../../config'
 import { gatewayDaConfig } from '../../service'
 import { AppsScriptGateway } from '../../sheets/appsScriptGateway'
@@ -125,5 +125,45 @@ describe('extrairSpreadsheetId', () => {
     assert.equal(extrairSpreadsheetId('https://docs.google.com/spreadsheets/d/1AbC_d-9/edit?usp=sharing'), '1AbC_d-9')
     assert.equal(extrairSpreadsheetId('https://docs.google.com/spreadsheets/u/1/d/XyZ/htmlview'), 'XyZ')
     assert.equal(extrairSpreadsheetId(''), '')
+  })
+})
+
+describe('planilha embutida no instalador (npm run dist)', () => {
+  const EMB = { apps_script_url: 'https://script.google.com/macros/s/EMPRESA/exec', apps_script_token: 'token-da-empresa-0123456789' }
+  const embutir = () => fs.writeFileSync(process.env['EMBUTIDO_PATH']!, JSON.stringify(EMB))
+  beforeEach(() => { fs.rmSync(process.env['EMBUTIDO_PATH']!, { force: true }); fs.rmSync(getConfigPath(), { force: true }); clearCachedConfig() })
+
+  it('sem config.json, o app já tem a planilha: só falta o login do ponto', () => {
+    embutir()
+    assert.equal(configExiste(), true)
+    const c = getConfig()
+    assert.deepEqual([c.conexao, c.apps_script_url, c.apps_script_token], ['apps_script', EMB.apps_script_url, EMB.apps_script_token])
+    assert.throws(() => credenciaisPonto(c), /Login do ponto não configurado/)
+  })
+
+  it('a embutida vale por cima do que estiver no config.json', () => {
+    configurarCofre(cofreFalso)
+    saveConfig({ ...BASE, apps_script_url: 'https://script.google.com/macros/s/OUTRA/exec' })
+    embutir()
+    clearCachedConfig()
+    assert.equal(getConfig().apps_script_url, EMB.apps_script_url)
+    assert.equal(getConfig().ponto_numero, '42') // o resto continua vindo do config.json
+  })
+
+  it('salvar NUNCA grava link/token da empresa no config.json do operador', () => {
+    configurarCofre(cofreFalso)
+    embutir()
+    saveConfig({ ...getConfig(), ponto_numero: '7' })
+    const disco = fs.readFileSync(getConfigPath(), 'utf-8')
+    assert.doesNotMatch(disco, /EMPRESA|token-da-empresa|apps_script_token_enc|apps_script_url/)
+    assert.equal(bruto().ponto_numero, '7')
+  })
+
+  it('arquivo embutido incompleto ou quebrado é ignorado', () => {
+    fs.writeFileSync(process.env['EMBUTIDO_PATH']!, JSON.stringify({ apps_script_url: EMB.apps_script_url }))
+    assert.equal(planilhaEmbutida(), null)
+    fs.writeFileSync(process.env['EMBUTIDO_PATH']!, '{')
+    assert.equal(planilhaEmbutida(), null)
+    assert.equal(configExiste(), false)
   })
 })
