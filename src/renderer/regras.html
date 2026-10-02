@@ -82,6 +82,8 @@
         <div class="field" style="width:160px"><label for="tolerancia_min">Tolerância (min)</label><input type="number" min="0" max="120" id="tolerancia_min" /></div>
         <div class="field" style="width:240px"><label for="horario_corte">Horário de corte</label><input type="text" class="hora" id="horario_corte" placeholder="17:30" maxlength="6" autocomplete="off" />
           <div class="hint">Antes disso o dia de hoje não é classificado.</div></div>
+        <div class="field" style="width:240px"><label for="adiantado_min">Adiantado a partir de (min)</label><input type="number" min="0" max="240" id="adiantado_min" placeholder="15" />
+          <div class="hint">Só para o relatório de pontualidade: entrada antes do previsto menos isto. Na planilha continua <span class="mono">.</span></div></div>
       </div>
     </section>
 
@@ -129,8 +131,8 @@
     <button class="primary" id="btnSalvar" disabled>Salvar</button>
   </div>
 
+  <script src="ui.js"></script>
   <script>
-    const $ = id => document.getElementById(id)
     const CODIGOS = ['', '.', 'P', 'F', 'FE', 'FO', 'AT', 'AC', 'S', 'V', 'GL']
     let colaboradores = []
     const porAdm = new Map()
@@ -147,7 +149,6 @@
     const OCULTOS = { horarios: ['saida'] }
     const dados = { horarios: [], excecoes: [], apelidos: [] }
 
-    function el(tag, props = {}, ...kids) { const e = document.createElement(tag); Object.assign(e, props); e.append(...kids); return e }
     function marcar() { $('dirty').textContent = 'Alterações não salvas'; $('btnSalvar').disabled = false }
     function msgs(list) { $('msgs').replaceChildren(...list.map(([k, t]) => el('div', { className: 'msg ' + k, textContent: t }))) }
 
@@ -318,6 +319,8 @@
       setoresSel = [...(r.regras.setores || [])].sort()
       $('tolerancia_min').value = r.regras.geral.tolerancia_min || ''
       $('tolerancia_min').oninput = marcar
+      $('adiantado_min').value = r.regras.geral.adiantado_min || ''
+      $('adiantado_min').oninput = marcar
       for (const k of ['entrada_padrao', 'horario_corte']) {
         $(k).value = r.regras.geral[k] || ''
         $(k).classList.remove('invalida')
@@ -344,6 +347,7 @@
           entrada_padrao: normalizarHora($('entrada_padrao').value) ?? $('entrada_padrao').value,
           tolerancia_min: $('tolerancia_min').value,
           horario_corte: normalizarHora($('horario_corte').value) ?? $('horario_corte').value,
+          adiantado_min: $('adiantado_min').value,
         },
         setores: setoresSel,
       }

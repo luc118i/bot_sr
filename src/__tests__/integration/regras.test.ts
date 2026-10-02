@@ -175,7 +175,7 @@ describe('salvar e carregar', () => {
   it('arquivo antigo sem campos novos ganha os padrões', () => {
     fs.writeFileSync(caminhoRegrasTeste(), JSON.stringify({ geral: { entrada_padrao: '08:00' } }))
     const r = lerRegrasLocais()!
-    assert.deepEqual(r.geral, { tolerancia_min: '', entrada_padrao: '08:00', horario_corte: '' })
+    assert.deepEqual(r.geral, { tolerancia_min: '', entrada_padrao: '08:00', horario_corte: '', adiantado_min: '' })
     assert.deepEqual([r.horarios, r.excecoes, r.apelidos], [[], [], []])
   })
 

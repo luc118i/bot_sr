@@ -50,7 +50,7 @@
     .ferias-mes b { color: var(--texto); font-size: 14px; }
     .grade { display: grid; grid-template-columns: minmax(0, 2fr) minmax(0, 1fr); gap: 24px; align-items: start; }
     .lateral { display: flex; flex-direction: column; gap: 24px; }
-    .kpis { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); border-top: 1px solid #EEEEEB; border-bottom: 1px solid #EEEEEB; margin-bottom: 20px; }
+    .kpis { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); border-top: 1px solid #EEEEEB; border-bottom: 1px solid #EEEEEB; margin-bottom: 20px; }
     .kpi { padding: 14px 0; display: flex; flex-direction: column; gap: 4px; }
     .kpi .r { font-size: 13px; color: var(--texto-3); }
     .kpi .v { font-size: 28px; font-weight: 600; letter-spacing: -.02em; font-variant-numeric: tabular-nums; }
@@ -60,9 +60,6 @@
     .col { display: flex; flex-direction: column; align-items: center; gap: 8px; }
     .pilha { width: 40px; height: 128px; display: flex; flex-direction: column; justify-content: flex-end; gap: 2px; }
     .pilha > div { width: 40px; border-radius: 3px; transition: height .4s ease; }
-    .pilha .p { background: var(--acao); border-radius: 3px 3px 8px 8px; }
-    .pilha .a { background: var(--atencao-ponto); }
-    .pilha .r { background: #C4C4BE; border-radius: 8px 8px 3px 3px; }
     .pilha.vazia { box-sizing: border-box; border: 1.5px dashed #D6D6D1; border-radius: 8px; }
     .col .dia { font-size: 12px; font-weight: 500; color: var(--texto-2); }
     .legenda { width: 140px; display: flex; flex-direction: column; gap: 10px; font-size: 13px; color: var(--texto-2); padding-bottom: 26px; }
@@ -116,7 +113,7 @@
       main { padding: 24px 18px 72px; }
       .hero h1 { font-size: 28px; }
       .grade { grid-template-columns: minmax(0, 1fr); }
-      .kpis { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+      .kpis { grid-template-columns: repeat(2, minmax(0, 1fr)); row-gap: 4px; }
       .topo nav { display: none; }
     }
   </style>
@@ -203,12 +200,9 @@
 
   <div class="toast" id="toast" hidden role="status"></div>
 
+  <script src="ui.js"></script>
   <script src="comando.js"></script>
   <script>
-    const $ = id => document.getElementById(id)
-    const SEMANA = ['domingo', 'segunda', 'terça', 'quarta', 'quinta', 'sexta', 'sábado']
-    const SEM = ['Dom', 'Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sáb']
-    const MESES = ['janeiro', 'fevereiro', 'março', 'abril', 'maio', 'junho', 'julho', 'agosto', 'setembro', 'outubro', 'novembro', 'dezembro']
     const LOGO = '<svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="#fff" stroke-width="1.6" stroke-linecap="round"><path d="M3 5h10M3 8h6M3 11h8"/></svg>'
     const OK = '<svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="#177245" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m3.5 8.5 3 3 6-7"/></svg>'
     const GIRA = '<svg class="spin" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#2451D6" stroke-width="2.4" stroke-linecap="round"><path d="M21 12a9 9 0 1 1-6.2-8.6"/></svg>'
@@ -225,42 +219,6 @@
     let ultimoLote = null        // último resultado (alimenta frequência, atenção e detalhes)
     let conferencias = {}        // data → última conferência gravada (conferencias.json)
     let ocupadoAgora = false
-
-    // ── utilidades ──
-    function el(tag, props = {}, ...kids) {
-      const e = document.createElement(tag)
-      for (const [k, v] of Object.entries(props)) {
-        if (k === 'html') e.innerHTML = v
-        else if (k === 'style' && typeof v === 'string') e.style.cssText = v
-        else if (k.startsWith('on')) e.addEventListener(k.slice(2).toLowerCase(), v)
-        else if (k in e) e[k] = v
-        else e.setAttribute(k, v)
-      }
-      e.append(...kids.filter(k => k !== null && k !== undefined && k !== false))
-      return e
-    }
-    function hojeISO() { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}` }
-    function deISO(s) { const [a, m, d] = s.split('-').map(Number); return new Date(a, m - 1, d) }
-    function nomeDia(iso) { const d = deISO(iso); return `${SEM[d.getDay()]} ${String(d.getDate()).padStart(2, '0')}/${String(d.getMonth() + 1).padStart(2, '0')}` }
-    function diaLongo(iso) { const d = deISO(iso); return `${SEMANA[d.getDay()]}, ${String(d.getDate()).padStart(2, '0')}/${String(d.getMonth() + 1).padStart(2, '0')}` }
-    function horaAgora() { const d = new Date(); return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}` }
-    function quando(isoData) {
-      const d = new Date(isoData), h = `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`
-      const dia = hojeISO(), ontem = (() => { const x = new Date(); x.setDate(x.getDate() - 1); return `${x.getFullYear()}-${String(x.getMonth() + 1).padStart(2, '0')}-${String(x.getDate()).padStart(2, '0')}` })()
-      const iso = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
-      return iso === dia ? `Hoje, ${h}` : iso === ontem ? `Ontem, ${h}` : `${String(d.getDate()).padStart(2, '0')}/${String(d.getMonth() + 1).padStart(2, '0')}, ${h}`
-    }
-    // IPC que rejeita (ex.: tela nova com o app antigo ainda aberto) vira {ok:false}
-    // com mensagem legível — a tela nunca fica presa em "Trabalhando…".
-    async function ipc(fn) {
-      try { return await fn() } catch (err) {
-        const msg = String((err && err.message) || err)
-        return { ok: false, message: /No handler registered/.test(msg)
-          ? 'O app aberto é mais antigo que esta tela — saia pelo ícone da bandeja (Sair) e abra de novo.'
-          : msg.replace(/^Error invoking remote method '[^']+': (Error: )?/, '') }
-      }
-    }
-    function plural(n, um, varios) { return `${n} ${n === 1 ? um : varios}` }
 
     let toastTimer = null
     function toast(texto, acao) {
@@ -455,7 +413,6 @@
 
     // ── esta semana: o que já foi conferido (lembra entre aberturas do app) ──
     function segundaDe(iso) { const d = deISO(iso); d.setDate(d.getDate() - (d.getDay() === 0 ? 6 : d.getDay() - 1)); return d }
-    function isoDe(d) { return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}` }
     function diasDaSemana(iso) { const s = segundaDe(iso); return Array.from({ length: 6 }, (_, k) => { const d = new Date(s); d.setDate(s.getDate() + k); return isoDe(d) }) }
     function renderSemana() {
       const hoje = hojeISO(), escolhido = $('data').value || hoje
@@ -579,38 +536,58 @@
             el('button', { className: 'btn primario pequeno', textContent: 'Conferir semana', onClick: () => rodar({ acao: 'semana', data: $('data').value, simular: $('simular').checked }, 'Conferir semana') })))
         return
       }
+      // Categorias do gráfico, de baixo pra cima. Ausência só aparece na legenda se houver.
+      const CAT = [
+        ['p', 'Pontual (.)', '#2451D6', ['.', 'GL']],
+        ['a', 'Atraso (P)', '#E3A13B', ['P']],
+        ['at', 'Atestado (AT/AC)', '#7A5AF8', ['AT', 'AC']],
+        ['f', 'Falta (F)', '#B42318', ['F']],
+        ['o', 'Férias, folga e outros', '#5FB3A6', ['FE', 'FO', 'S', 'V']],
+        ['r', 'Para revisão', '#C4C4BE', ['REV']],
+      ]
+      const catDe = Object.fromEntries(CAT.flatMap(([k, , , cods]) => cods.map(c => [c, k])))
       const dias = lote.planos.map(p => {
-        const c = { '.': 0, P: 0, REV: 0 }
-        for (const i of p.itens) { const k = codigoFinal(i); if (k in c) c[k]++ }
-        return { data: p.data, ...c }
+        const c = Object.fromEntries(CAT.map(([k]) => [k, 0]))
+        let noPonto = 0
+        for (const i of p.itens) {
+          if (i.situacao !== 'ausente_no_ponto') noPonto++
+          const k = catDe[codigoFinal(i)]
+          if (k) c[k]++
+        }
+        return { data: p.data, c, noPonto }
       })
-      const pont = dias.reduce((s, d) => s + d['.'], 0), atr = dias.reduce((s, d) => s + d.P, 0), rev = dias.reduce((s, d) => s + d.REV, 0)
-      const taxa = pont + atr ? Math.round((100 * pont) / (pont + atr)) : null
-      const max = Math.max(1, ...dias.map(d => d['.'] + d.P + d.REV))
+      const soma = k => dias.reduce((s, d) => s + d.c[k], 0)
+      const pont = soma('p'), atr = soma('a'), rev = soma('r'), faltas = soma('f'), atest = soma('at'), outras = soma('o')
+      const presentes = pont + atr, noPonto = dias.reduce((s, d) => s + d.noPonto, 0)
+      const taxa = presentes ? Math.round((100 * pont) / presentes) : null
+      const max = Math.max(1, ...dias.map(d => CAT.reduce((s, [k]) => s + d.c[k], 0)))
       const px = n => Math.round((n / max) * 124)
       const primeiro = lote.planos[0].data, ultimo = lote.planos[lote.planos.length - 1].data
+      const periodo = primeiro === ultimo ? diaLongo(primeiro) : `${nomeDia(primeiro)} a ${nomeDia(ultimo)} · ${plural(lote.planos.length, 'dia', 'dias')}`
+      const pulados = lote.pulados.length ? ` · ${plural(lote.pulados.length, 'domingo/feriado pulado', 'domingos/feriados pulados')}` : ''
       const kpi = (r, v, d) => el('div', { className: 'kpi' }, el('span', { className: 'r', textContent: r }), el('span', { className: 'v', textContent: v }), el('span', { className: 'd', textContent: d }))
+      const partesAus = [faltas && plural(faltas, 'falta', 'faltas'), atest && plural(atest, 'atestado', 'atestados'), outras && `${outras} férias/folga`].filter(Boolean)
       f.replaceChildren(
         el('div', { className: 'cabeca' }, el('div', {},
           el('h2', { className: 'titulo-secao', textContent: 'Frequência' }),
-          el('div', { className: 'sub', textContent: primeiro === ultimo ? diaLongo(primeiro) : `${nomeDia(primeiro)} a ${nomeDia(ultimo)} · colaboradores do seu ponto` }))),
+          el('div', { className: 'sub', textContent: periodo + pulados + ' · colaboradores do seu ponto' }))),
         el('div', { className: 'kpis' },
-          kpi('Pontualidade', taxa === null ? '—' : taxa + '%', 'pontuais ÷ (pontuais + atrasos)'),
+          kpi('Presentes', String(presentes), primeiro === ultimo ? `de ${noPonto} do seu ponto` : `de ${noPonto} registros nos dias`),
+          kpi('Pontualidade', taxa === null ? '—' : taxa + '%', 'pontuais ÷ presentes'),
           kpi('Atrasos', String(atr), 'marcados com P'),
-          kpi('Para revisão', String(rev), 'sem ponto, nome ou linha'),
-          kpi('Dias', String(lote.planos.length), `${plural(lote.pulados.length, 'pulado', 'pulados')}`)),
+          kpi('Ausências', String(faltas + atest + outras), partesAus.join(' · ') || 'nenhuma'),
+          kpi('Para revisão', String(rev), 'sem ponto, nome ou linha')),
         el('div', { className: 'grafico' },
           el('div', { className: 'barras' }, ...dias.map(d => el('div', { className: 'col' },
-            el('div', { className: 'pilha', title: `${d['.']} pontuais · ${d.P} atrasos · ${d.REV} p/ revisão` },
-              d.REV ? el('div', { className: 'r', style: `height:${px(d.REV)}px` }) : null,
-              d.P ? el('div', { className: 'a', style: `height:${px(d.P)}px` }) : null,
-              el('div', { className: 'p', style: `height:${px(d['.'])}px` })),
+            el('div', { className: 'pilha', title: CAT.filter(([k]) => d.c[k]).map(([k, rot]) => `${d.c[k]} ${rot}`).join(' · ') },
+              // Do topo pra base: a última categoria (revisão) fica em cima, pontual embaixo.
+              ...[...CAT].reverse().filter(([k]) => d.c[k]).map(([k, , cor], n, vis) => el('div', {
+                style: `height:${px(d.c[k])}px;background:${cor};border-radius:${n === 0 ? '8px 8px ' : '3px 3px '}${n === vis.length - 1 ? '8px 8px' : '3px 3px'}`,
+              }))),
             el('span', { className: 'dia', textContent: nomeDia(d.data) }))),
             ...lote.pulados.map(p => el('div', { className: 'col' }, el('div', { className: 'pilha vazia' }), el('span', { className: 'dia', textContent: nomeDia(p.data) })))),
           el('div', { className: 'legenda' },
-            el('span', {}, el('i', { style: 'background:#2451D6' }), 'Pontual (.)'),
-            el('span', {}, el('i', { style: 'background:#E3A13B' }), 'Atraso (P)'),
-            el('span', {}, el('i', { style: 'background:#C4C4BE' }), 'Para revisão'))))
+            ...CAT.filter(([k]) => ['p', 'a', 'r'].includes(k) || soma(k)).map(([, rot, cor]) => el('span', {}, el('i', { style: `background:${cor}` }), rot)))))
     }
 
     // ── precisa da sua atenção ──
@@ -642,7 +619,6 @@
 
     // ── férias: FE em todos os dias úteis do período (padrão: o mês todo) ──
     function fimDoMes(d) { return isoDe(new Date(d.getFullYear(), d.getMonth() + 1, 0)) }
-    function dataCurta(iso) { const d = deISO(iso); return `${String(d.getDate()).padStart(2, '0')}/${String(d.getMonth() + 1).padStart(2, '0')}` }
     async function abrirFerias(texto) {
       // Lista de colaboradores: a última lida da planilha (a mesma de Horários e regras).
       let colabs = [], setores = []

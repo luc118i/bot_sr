@@ -1,0 +1,408 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'" />
+  <title>SR_dados — Relatório de Pontualidade</title>
+  <link rel="stylesheet" href="sr.css" />
+  <style>
+    main { max-width: 1200px; margin: 0 auto; padding: 32px 32px 72px; display: flex; flex-direction: column; gap: 20px; }
+
+    /* cabeçalho da página */
+    .pagina { display: flex; justify-content: space-between; align-items: flex-end; gap: 16px; flex-wrap: wrap; }
+    .pagina h1 { font-size: 26px; font-weight: 600; letter-spacing: -.02em; }
+    .pagina p { font-size: 14px; color: var(--texto-2); margin-top: 4px; max-width: 620px; }
+    .pagina .periodo { margin-top: 10px; font-size: 13px; color: var(--texto-3); }
+    .pagina .periodo b { color: var(--texto); font-weight: 600; }
+    .pagina .acoes { display: flex; gap: 8px; flex-wrap: wrap; }
+
+    /* filtros */
+    .filtros { display: flex; flex-direction: column; gap: 14px; padding: 18px 20px; }
+    .filtros .linha { display: flex; gap: 12px; flex-wrap: wrap; align-items: flex-end; }
+    .filtros label { display: flex; flex-direction: column; gap: 4px; font-size: 12px; font-weight: 500; color: var(--texto-3); }
+    .filtros .quem { flex: 1 1 260px; } .filtros .quem input { width: 100%; }
+    .filtros select { min-width: 170px; }
+    .filtros .datas { display: flex; gap: 8px; align-items: center; font-size: 13px; color: var(--texto-3); }
+
+    /* indicadores: clicar filtra a tabela pela situação */
+    .kpis { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 12px; }
+    .kpi { text-align: left; font-family: inherit; color: inherit; background: var(--superficie); border: 1px solid var(--borda); border-radius: 16px; padding: 14px 16px; display: flex; flex-direction: column; gap: 2px; cursor: pointer; box-shadow: var(--sombra-1); transition: border-color .15s, box-shadow .15s, background .15s; }
+    .kpi:hover { border-color: var(--borda-forte); box-shadow: var(--sombra-2); }
+    .kpi[aria-pressed="true"] { border-color: var(--acao); box-shadow: 0 0 0 3px rgba(36, 81, 214, .12); }
+    .kpi:disabled { cursor: default; box-shadow: var(--sombra-1); border-color: var(--borda); }
+    .kpi .r { display: flex; align-items: center; gap: 6px; font-size: 13px; color: var(--texto-2); font-weight: 500; }
+    .kpi .r i { width: 8px; height: 8px; border-radius: 99px; }
+    .kpi .v { font-size: 28px; font-weight: 600; letter-spacing: -.02em; font-variant-numeric: tabular-nums; }
+    .kpi .d { font-size: 12px; color: var(--texto-3); }
+
+    /* tabela */
+    .busca { flex: 0 1 280px; min-width: 0; }
+    #tab th:first-child { padding-left: 12px; }
+    .rolagem { overflow-x: auto; margin: 0 -4px; padding: 0 4px; }
+    #tab { min-width: 860px; }
+    th button { all: unset; cursor: pointer; display: inline-flex; align-items: center; gap: 4px; }
+    th button:focus-visible { box-shadow: var(--foco); border-radius: 4px; }
+    th[aria-sort] button { color: var(--texto); }
+    th .seta { font-size: 10px; opacity: .7; }
+    td { vertical-align: middle; }
+    tbody tr.reg { cursor: pointer; }
+    tbody tr.reg.atraso td:first-child { box-shadow: inset 3px 0 0 var(--erro-ponto); }
+    tbody tr.reg.divergente td:first-child, tbody tr.reg.pendente td:first-child { box-shadow: inset 3px 0 0 var(--atencao-ponto); }
+    tbody tr.reg td:first-child { padding-left: 12px; }
+    tbody tr.reg[aria-expanded="true"] { background: var(--superficie-2); }
+    tr.detalhe td { border-top: 0; padding: 0 12px 16px 12px; background: var(--superficie-2); }
+    .detalhe-grade { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 10px 20px; font-size: 13px; }
+    .detalhe-grade span { display: block; font-size: 12px; color: var(--texto-3); }
+    .detalhe-grade .longo { grid-column: 1 / -1; }
+    .dif { font-family: var(--mono); font-size: 13px; white-space: nowrap; }
+    .dif.mais { color: var(--erro); } .dif.menos { color: var(--acao-texto); }
+    .nome { font-weight: 500; }
+    .paginacao { display: flex; justify-content: space-between; align-items: center; gap: 12px; margin-top: 14px; font-size: 13px; color: var(--texto-3); flex-wrap: wrap; }
+    .paginacao div { display: flex; gap: 8px; }
+
+    @media (max-width: 760px) {
+      main { padding: 20px 16px 72px; }
+      .topo { padding: 0 16px; }
+      .pagina h1 { font-size: 22px; }
+      .filtros select, .busca { width: 100%; min-width: 0; }
+      .filtros label { flex: 1 1 140px; }
+      .filtros .datas { flex: 1 1 100%; min-width: 0; } .filtros .datas input { flex: 1 1 0; width: 0; min-width: 0; }
+    }
+    @media (max-width: 480px) {
+      .topo .marca { font-size: 0; gap: 0; }
+      .topo .nav { padding: 7px 8px; }
+    }
+  </style>
+</head>
+<body>
+  <header class="topo">
+    <div class="marca">
+      <span class="logo"><svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="#fff" stroke-width="1.6" stroke-linecap="round"><path d="M3 5h10M3 8h6M3 11h8"/></svg></span>
+      SR_dados
+    </div>
+    <nav aria-label="Principal">
+      <button class="nav" id="navInicio">Início</button>
+      <button class="nav" id="navRegras">Horários e regras</button>
+      <button class="nav ativa" aria-current="page">Relatórios</button>
+    </nav>
+    <button class="btn icone" id="btnConfig" aria-label="Configurações" title="Configurações">
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#55555D" stroke-width="1.8" stroke-linecap="round"><path d="M4 7h10M18 7h2M4 17h4M12 17h8"/><circle cx="16" cy="7" r="2"/><circle cx="10" cy="17" r="2"/></svg>
+    </button>
+  </header>
+
+  <main>
+    <div class="pagina">
+      <div>
+        <h1>Relatório de Pontualidade</h1>
+        <p>Quem chegou no horário, quem atrasou e o que precisa de atenção — a partir das conferências do ponto feitas por este app.</p>
+        <div class="periodo" id="periodoTexto">Carregando…</div>
+      </div>
+      <div class="acoes">
+        <button class="btn fantasma" id="btnPasta" title="Relatórios .txt e .json de cada gravação">Pasta de relatórios</button>
+        <button class="btn" id="btnAtualizar">Atualizar</button>
+        <button class="btn primario" id="btnExportar">Exportar CSV</button>
+      </div>
+    </div>
+
+    <section class="cartao filtros" aria-label="Filtros">
+      <div class="linha">
+        <div class="segmentos" role="tablist" aria-label="Período" id="periodos"></div>
+        <div class="datas">
+          <input type="date" id="inicio" aria-label="De" /> até <input type="date" id="fim" aria-label="Até" />
+        </div>
+      </div>
+      <div class="linha">
+        <label class="quem">Colaborador ou ADM <input type="text" id="colab" list="colabs" placeholder="Todos" autocomplete="off" /></label>
+        <label>Setor <select id="setor"><option value="">Todos</option></select></label>
+        <label>Situação <select id="classe"><option value="">Todas</option></select></label>
+        <label>Motivo <select id="motivo"><option value="">Todos</option></select></label>
+        <button class="btn fantasma pequeno" id="btnLimpar" hidden>Limpar filtros</button>
+      </div>
+      <datalist id="colabs"></datalist>
+    </section>
+
+    <section class="kpis" id="kpis" aria-label="Indicadores"></section>
+
+    <section class="cartao" aria-label="Registros">
+      <div class="cabeca">
+        <div><h2 class="titulo-secao">Registros</h2><div class="sub" id="tabSub"></div></div>
+        <input type="text" class="busca" id="busca" placeholder="Buscar nome ou ADM" aria-label="Buscar nome ou ADM" autocomplete="off" />
+      </div>
+      <div id="tabCorpo"></div>
+    </section>
+  </main>
+
+  <div class="toast" id="toast" hidden role="status"></div>
+
+  <script src="ui.js"></script>
+  <script>
+    // Mesmas classes e rótulos de src/core/pontualidade.ts (ROTULO_CLASSE).
+    const CLASSES = {
+      pontual: { rotulo: 'Pontual', cor: 'var(--sucesso-ponto)', badge: 'ok' },
+      atraso: { rotulo: 'Atraso', cor: 'var(--erro-ponto)', badge: 'erro' },
+      adiantado: { rotulo: 'Adiantado', cor: 'var(--acao)', badge: 'acao' },
+      divergente: { rotulo: 'Divergente', cor: 'var(--atencao-ponto)', badge: 'aviso' },
+      ausencia: { rotulo: 'Ausência justificada', cor: '#8A8A92', badge: '' },
+      pendente: { rotulo: 'Pendente', cor: 'var(--atencao-ponto)', badge: 'aviso' },
+    }
+    const POR_PAGINA = 25
+
+    // ── estado da tela ──
+    const filtros = { inicio: '', fim: '', adm: '', busca: '', setor: '', classe: '', motivo: '' }
+    let periodo = '30d'
+    let rel = null                 // último relatório recebido
+    let ordem = { col: 'data', dir: -1 }
+    let pagina = 0
+    const abertos = new Set()      // linhas com o detalhe aberto
+    let consulta = 0               // descarta respostas fora de ordem
+
+    // Período e situação escolhidos ficam lembrados nesta máquina (conveniência).
+    try { const p = JSON.parse(localStorage.getItem('rel-pontualidade') || '{}'); if (p.periodo) periodo = p.periodo; if (p.periodo === 'custom') Object.assign(filtros, { inicio: p.inicio || '', fim: p.fim || '' }) } catch { /* sem armazenamento */ }
+    const lembrar = () => { try { localStorage.setItem('rel-pontualidade', JSON.stringify({ periodo, inicio: filtros.inicio, fim: filtros.fim })) } catch { /* idem */ } }
+
+    // ── navegação e ações ──
+    $('navInicio').onclick = () => window.agent.abrirInicio()
+    $('navRegras').onclick = () => window.agent.abrirRegras()
+    $('btnConfig').onclick = () => window.agent.abrirConfig()
+    $('btnPasta').onclick = () => window.agent.abrirPastaRelatorios()
+    $('btnAtualizar').onclick = () => carregar(true)
+    $('btnExportar').onclick = exportar
+
+    let toastTimer = null
+    function toast(texto, acao) {
+      const t = $('toast')
+      t.replaceChildren(el('span', { textContent: texto }), acao ? el('button', { className: 'btn pequeno', textContent: acao.rotulo, onClick: () => { t.hidden = true; acao.fn() } }) : null)
+      t.hidden = false
+      clearTimeout(toastTimer)
+      toastTimer = setTimeout(() => { t.hidden = true }, 6000)
+    }
+
+    // ── período ──
+    const PERIODOS = [
+      ['7d', 'Últimos 7 dias', () => [somarDias(hojeISO(), -6), hojeISO()]],
+      ['30d', 'Últimos 30 dias', () => [somarDias(hojeISO(), -29), hojeISO()]],
+      ['mes', 'Este mês', () => [hojeISO().slice(0, 8) + '01', hojeISO()]],
+      ['mesAnt', 'Mês passado', () => { const d = deISO(hojeISO().slice(0, 8) + '01'); const fim = somarDias(isoDe(d), -1); return [fim.slice(0, 8) + '01', fim] }],
+      ['tudo', 'Tudo', () => ['', '']],
+    ]
+    function aplicarPeriodo(id) {
+      periodo = id
+      const p = PERIODOS.find(x => x[0] === id)
+      if (p) [filtros.inicio, filtros.fim] = p[2]()
+      $('inicio').value = filtros.inicio
+      $('fim').value = filtros.fim
+      for (const b of $('periodos').children) b.setAttribute('aria-selected', String(b.dataset.id === periodo))
+    }
+    $('periodos').replaceChildren(...PERIODOS.map(([id, rotulo]) => el('button', { className: 'aba', role: 'tab', textContent: rotulo, 'data-id': id, onClick: () => { aplicarPeriodo(id); mudou() } })))
+    for (const id of ['inicio', 'fim']) {
+      $(id).addEventListener('change', () => {
+        filtros[id] = $(id).value
+        periodo = 'custom'
+        for (const b of $('periodos').children) b.setAttribute('aria-selected', 'false')
+        mudou()
+      })
+    }
+
+    // ── demais filtros ──
+    $('colab').addEventListener('change', () => {
+      const v = $('colab').value.trim()
+      filtros.adm = (/^(\d+)\s*—/.exec(v) || /^(\d+)$/.exec(v) || [])[1] || ''
+      // Texto que não é um colaborador da lista vira busca por nome.
+      if (!filtros.adm && v) { filtros.busca = v; $('busca').value = v; $('colab').value = '' }
+      mudou()
+    })
+    for (const id of ['setor', 'classe', 'motivo']) $(id).addEventListener('change', () => { filtros[id] = $(id).value; mudou() })
+    let buscaTimer = null
+    $('busca').addEventListener('input', () => { clearTimeout(buscaTimer); buscaTimer = setTimeout(() => { filtros.busca = $('busca').value.trim(); mudou() }, 200) })
+    $('btnLimpar').onclick = () => {
+      Object.assign(filtros, { adm: '', busca: '', setor: '', classe: '', motivo: '' })
+      for (const id of ['colab', 'busca', 'setor', 'classe', 'motivo']) $(id).value = ''
+      mudou()
+    }
+    function filtrarPor(campo, valor) {
+      filtros[campo] = filtros[campo] === valor ? '' : valor
+      if (campo !== 'adm') $(campo).value = filtros[campo]
+      else $('colab').value = filtros.adm ? rotuloColab(filtros.adm) : ''
+      mudou()
+    }
+
+    function mudou() { pagina = 0; abertos.clear(); lembrar(); carregar() }
+
+    // ── dados ──
+    async function carregar(avisar) {
+      const n = ++consulta
+      const r = await ipc(() => window.agent.pontualidade(criterios()))
+      if (n !== consulta) return
+      if (!r.ok) {
+        $('periodoTexto').textContent = ''
+        $('kpis').replaceChildren()
+        return $('tabCorpo').replaceChildren(el('div', { className: 'alerta erro' }, el('span', { className: 'ponto' }), el('div', {}, el('b', { textContent: 'Não deu pra montar o relatório' }), el('span', { textContent: r.message }))))
+      }
+      rel = r
+      render()
+      if (avisar) toast('Relatório atualizado')
+    }
+    // Só os critérios preenchidos vão pro processo principal.
+    function criterios() { return Object.fromEntries(Object.entries(filtros).filter(([, v]) => v)) }
+
+    function render() {
+      renderPeriodo()
+      renderOpcoes()
+      renderKpis()
+      renderTabela()
+      $('btnLimpar').hidden = !['adm', 'busca', 'setor', 'classe', 'motivo'].some(k => filtros[k])
+      $('btnExportar').disabled = !rel.registros.length
+    }
+
+    function renderPeriodo() {
+      const c = rel.cobertura
+      const t = $('periodoTexto')
+      if (!c.dias) return t.replaceChildren('Ainda sem histórico.')
+      const p = filtros.inicio || filtros.fim
+        ? `${filtros.inicio ? dataCurta(filtros.inicio) : 'início'} a ${filtros.fim ? dataCurta(filtros.fim) : 'hoje'}`
+        : 'todo o histórico'
+      t.replaceChildren('Período: ', el('b', { textContent: p }),
+        ` · histórico desde ${dataCurta(c.primeiro)} (${plural(c.dias, 'dia conferido', 'dias conferidos')})`)
+    }
+
+    const rotuloColab = adm => { const c = rel && rel.opcoes.colaboradores.find(x => x.adm === adm); return c ? `${c.adm} — ${c.nome}` : adm }
+    function preencherSelect(sel, opcoes, valor, todos) {
+      sel.replaceChildren(el('option', { value: '', textContent: todos }), ...opcoes.map(([v, t]) => el('option', { value: v, textContent: t })))
+      sel.value = valor
+    }
+    function renderOpcoes() {
+      preencherSelect($('setor'), rel.opcoes.setores.map(s => [s, s]), filtros.setor, 'Todos')
+      preencherSelect($('classe'), Object.entries(CLASSES).map(([k, c]) => [k, c.rotulo]), filtros.classe, 'Todas')
+      preencherSelect($('motivo'), rel.opcoes.motivos.map(m => [m, m]), filtros.motivo, 'Todos')
+      $('setor').disabled = !rel.opcoes.setores.length
+      $('colabs').replaceChildren(...rel.opcoes.colaboradores.map(c => el('option', { value: `${c.adm} — ${c.nome}` })))
+    }
+
+    // ── indicadores ──
+    function kpi({ rotulo, valor, detalhe, cor, classe, desabilitado }) {
+      const ativo = classe !== undefined && filtros.classe === classe && classe !== ''
+      return el('button', {
+        className: 'kpi', disabled: !!desabilitado, 'aria-pressed': String(ativo),
+        title: classe ? `Mostrar só: ${rotulo.toLowerCase()}` : classe === '' ? 'Mostrar todas as situações' : '',
+        onClick: () => { if (classe === undefined) return; filtros.classe = ativo ? '' : classe; $('classe').value = filtros.classe; mudou() },
+      }, el('span', { className: 'r' }, cor ? el('i', { style: `background:${cor}` }) : null, rotulo),
+        el('span', { className: 'v', textContent: valor }),
+        el('span', { className: 'd', textContent: detalhe }))
+    }
+    function renderKpis() {
+      const c = rel.contagem
+      const pct = n => (c.total ? `${Math.round(100 * n / c.total)}% dos registros` : '—')
+      const minAtraso = rel.minutosAtraso
+      $('kpis').replaceChildren(
+        kpi({ rotulo: 'Registros', valor: c.total, classe: '', detalhe: c.ausencia || c.pendente ? `${plural(c.ausencia, 'ausência', 'ausências')} · ${plural(c.pendente, 'pendente', 'pendentes')}` : 'colaboradores × dias' }),
+        kpi({ rotulo: 'Pontuais', valor: c.pontual, classe: 'pontual', cor: CLASSES.pontual.cor, detalhe: pct(c.pontual) }),
+        kpi({ rotulo: 'Atrasos', valor: c.atraso, classe: 'atraso', cor: CLASSES.atraso.cor, detalhe: c.atraso ? `${minAtraso} min além do previsto` : 'nenhum no período' }),
+        kpi({ rotulo: 'Adiantados', valor: c.adiantado, classe: 'adiantado', cor: CLASSES.adiantado.cor, detalhe: `${rel.adiantadoMin}+ min antes do previsto` }),
+        kpi({ rotulo: 'Divergências', valor: c.divergente, classe: 'divergente', cor: CLASSES.divergente.cor, detalhe: 'planilha diferente do ponto' }),
+        kpi({ rotulo: 'Pontualidade', valor: c.pontualidadePct === null ? '—' : `${String(c.pontualidadePct).replace('.', ',')}%`, desabilitado: true, detalhe: 'pontuais + adiantados ÷ quem bateu ponto' }))
+    }
+
+    // ── tabela ──
+    const fmtDif = r => {
+      if (r.diferencaMin === null) return el('span', { className: 'ter', textContent: '—' })
+      const d = r.diferencaMin
+      return el('span', { className: 'dif ' + (r.classe === 'atraso' ? 'mais' : r.classe === 'adiantado' ? 'menos' : ''), textContent: `${d > 0 ? '+' : d < 0 ? '−' : ''}${Math.abs(d)} min` })
+    }
+    const COLUNAS = [
+      ['nome', 'Colaborador', r => r.nome, r => el('span', { className: 'nome', textContent: r.nome })],
+      ['adm', 'ADM', r => Number(r.adm) || 0, r => el('span', { className: 'mono', textContent: r.adm || '—' })],
+      ['data', 'Dia', r => r.data, r => nomeDia(r.data)],
+      ['previsto', 'Previsto', r => r.previsto || '', r => el('span', { className: 'mono', textContent: r.previsto || '—' })],
+      ['entrada', 'Realizado', r => r.entrada || '', r => el('span', { className: 'mono', textContent: r.entrada || '—' })],
+      ['diferencaMin', 'Diferença', r => r.diferencaMin ?? -Infinity, fmtDif],
+      ['classe', 'Situação', r => CLASSES[r.classe].rotulo, r => el('span', { className: 'badge ' + CLASSES[r.classe].badge, textContent: CLASSES[r.classe].rotulo })],
+      ['motivoCurto', 'Motivo', r => r.motivoCurto, r => el('span', { className: 'sec', textContent: r.motivoCurto || '—' })],
+      ['setor', 'Setor', r => r.setor, r => r.setor || el('span', { className: 'ter', textContent: '—' })],
+    ]
+
+    function ordenados() {
+      const col = COLUNAS.find(c => c[0] === ordem.col)
+      const chave = r => `${r.data}|${r.adm}|${r.nome}`
+      return [...rel.registros].sort((a, b) => {
+        const x = col[2](a), y = col[2](b)
+        return (x < y ? -1 : x > y ? 1 : 0) * ordem.dir || chave(a).localeCompare(chave(b))
+      })
+    }
+
+    function renderTabela() {
+      const regs = rel.registros
+      $('tabSub').textContent = regs.length ? `${plural(regs.length, 'registro', 'registros')} · clique numa linha para ver os detalhes` : ''
+      if (!rel.cobertura.dias) {
+        return $('tabCorpo').replaceChildren(vazio('Ainda não há conferências guardadas',
+          'O relatório se monta sozinho a cada dia que você preencher ou conferir na tela inicial.', 'Ir para o Início', () => window.agent.abrirInicio()))
+      }
+      if (!regs.length) {
+        return $('tabCorpo').replaceChildren(vazio('Nenhum registro com esses filtros',
+          'Tente outro período ou limpe os filtros.', 'Limpar filtros', () => { $('btnLimpar').click(); if (periodo !== 'tudo') { aplicarPeriodo('tudo'); mudou() } }))
+      }
+      const total = Math.ceil(regs.length / POR_PAGINA)
+      pagina = Math.min(pagina, total - 1)
+      const pag = ordenados().slice(pagina * POR_PAGINA, (pagina + 1) * POR_PAGINA)
+
+      const cab = el('tr', {}, ...COLUNAS.map(([id, rotulo]) => {
+        const th = el('th', {}, el('button', { onClick: () => { ordem = { col: id, dir: ordem.col === id ? -ordem.dir : (id === 'data' || id === 'diferencaMin' ? -1 : 1) }; pagina = 0; renderTabela() } },
+          rotulo, ordem.col === id ? el('span', { className: 'seta', textContent: ordem.dir > 0 ? '▲' : '▼' }) : null))
+        if (ordem.col === id) th.setAttribute('aria-sort', ordem.dir > 0 ? 'ascending' : 'descending')
+        return th
+      }))
+      const corpo = el('tbody')
+      for (const r of pag) {
+        const id = `${r.data}|${r.adm}|${r.nome}`
+        const aberto = abertos.has(id)
+        const tr = el('tr', { className: `reg ${r.classe}`, tabIndex: 0, 'aria-expanded': String(aberto) }, ...COLUNAS.map(c => el('td', {}, c[3](r))))
+        const alternar = () => { aberto ? abertos.delete(id) : abertos.add(id); renderTabela() }
+        tr.addEventListener('click', alternar)
+        tr.addEventListener('keydown', e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); alternar() } })
+        corpo.append(tr)
+        if (aberto) corpo.append(el('tr', { className: 'detalhe' }, el('td', { colSpan: COLUNAS.length }, detalhe(r))))
+      }
+      const paginacao = el('div', { className: 'paginacao' },
+        el('span', { textContent: `${pagina * POR_PAGINA + 1}–${pagina * POR_PAGINA + pag.length} de ${regs.length}` }),
+        total > 1 ? el('div', {},
+          el('button', { className: 'btn pequeno', textContent: 'Anterior', disabled: pagina === 0, onClick: () => { pagina--; renderTabela() } }),
+          el('span', { style: 'align-self:center', textContent: `Página ${pagina + 1} de ${total}` }),
+          el('button', { className: 'btn pequeno', textContent: 'Próxima', disabled: pagina >= total - 1, onClick: () => { pagina++; renderTabela() } })) : null)
+      $('tabCorpo').replaceChildren(el('div', { className: 'rolagem' }, el('table', { id: 'tab' }, el('thead', {}, cab), corpo)), paginacao)
+    }
+
+    function detalhe(r) {
+      const campo = (rotulo, valor, longo) => el('div', { className: longo ? 'longo' : '' }, el('span', { textContent: rotulo }), valor || '—')
+      return el('div', { className: 'detalhe-grade' },
+        campo('Horário previsto vem de', r.origem),
+        campo('Tolerância', r.toleranciaMin === null ? null : `${r.toleranciaMin} min`),
+        campo('Na planilha', r.codigo ? `"${r.codigo}"` : 'vazio'),
+        campo('Pelo ponto seria', r.codigoBot ? `"${r.codigoBot}"` : 'sem decisão (precisa de uma pessoa)'),
+        campo('Nome no ponto', r.nomePonto),
+        campo('Detalhe', r.motivo, true),
+        el('div', { className: 'longo' },
+          r.adm ? el('button', { className: 'btn pequeno', textContent: filtros.adm === r.adm ? 'Mostrar todos os colaboradores' : `Ver só ${r.nome.split(' ')[0]}`, onClick: e => { e.stopPropagation(); filtrarPor('adm', r.adm) } }) : null))
+    }
+
+    function vazio(titulo, texto, botao, fn) {
+      return el('div', { className: 'vazio' },
+        el('div', { className: 'icone', html: '<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#6B6B73" stroke-width="1.8" stroke-linecap="round"><path d="M4 20V10M10 20V4M16 20v-7M22 20H2"/></svg>' }),
+        el('b', { textContent: titulo }), el('span', { textContent: texto }),
+        el('button', { className: 'btn primario pequeno', textContent: botao, onClick: fn }))
+    }
+
+    // ── exportar ──
+    async function exportar() {
+      const r = await ipc(() => window.agent.exportarPontualidade(criterios()))
+      if (r.cancelado) return
+      if (!r.ok) return toast(r.message)
+      toast(`${plural(r.linhas, 'registro exportado', 'registros exportados')}`, { rotulo: 'Mostrar arquivo', fn: () => window.agent.mostrarArquivo(r.arquivo) })
+    }
+
+    // Volta pra tela (ex.: depois de conferir um dia no Início) = dados novos.
+    window.addEventListener('focus', () => carregar())
+    aplicarPeriodo(periodo)
+    carregar()
+  </script>
+</body>
+</html>

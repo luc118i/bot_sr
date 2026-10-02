@@ -311,6 +311,22 @@ async function roteiro() {
     await prepararTela()
   })
 
+  await passo('"Relatórios" mostra a pontualidade das conferências feitas; clicar em Atrasos filtra a tabela', async () => {
+    await js(wc, `document.getElementById('navRelatorios').click()`)
+    await naTela('relatorios.html')
+    igual(BrowserWindow.getAllWindows().length, 1, 'janelas abertas')
+    await js(wc, `[...document.querySelectorAll('#periodos .aba')].find(b => b.textContent === 'Tudo').click()`)
+    await esperar('tabela com o 28/09', async () => /MARCOS FICTICIO PEREIRA/.test(await textoDe(wc, '#tabCorpo')))
+    await js(wc, `[...document.querySelectorAll('.kpi')].find(k => k.textContent.startsWith('Atrasos')).click()`)
+    await esperar('só atrasos', () => js(wc, `(() => {
+      const s = [...document.querySelectorAll('#tabCorpo tbody tr.reg')].map(r => r.className)
+      return s.length > 0 && s.every(c => /\\batraso\\b/.test(c)) })()`))
+    await foto(w, '6-relatorios')
+    await js(wc, `document.getElementById('navInicio').click()`)
+    await naTela('app.html')
+    await prepararTela()
+  })
+
   await passo('a janela única está maximizada e nunca abriu outra', async () => {
     igual([BrowserWindow.getAllWindows().length, w.isMaximized()], [1, true], '[janelas, maximizada]')
   })

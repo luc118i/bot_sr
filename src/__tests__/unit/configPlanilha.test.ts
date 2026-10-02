@@ -18,7 +18,7 @@ const CFG_GRIDS: GridsConfig = {
 describe('parseConfigPlanilha: padrão', () => {
   it('lê tolerância, entrada e corte', () => {
     const c = parseConfigPlanilha(grids())
-    assert.deepEqual(c.geral, { toleranciaMin: 5, entradaPadraoMin: 480, horarioCorteMin: 1080 })
+    assert.deepEqual(c.geral, { toleranciaMin: 5, entradaPadraoMin: 480, horarioCorteMin: 1080, adiantadoMin: 15 })
     assert.deepEqual(c.avisos, [])
   })
 

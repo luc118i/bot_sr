@@ -18,7 +18,7 @@ export const SECOES_CONFIG = {
 } as const
 
 export const CABECALHOS_CONFIG: Record<keyof typeof SECOES_CONFIG, string[]> = {
-  geral: ['tolerancia_min', 'entrada_padrao', 'horario_corte'],
+  geral: ['tolerancia_min', 'entrada_padrao', 'horario_corte', 'adiantado_min'],
   horarios: ['adm', 'entrada', 'saida', 'tolerancia_min', 'vigencia_inicio', 'vigencia_fim', 'obs'],
   // recorrente: '' = só na data; 'sempre' = todo dia até ser removida da lista.
   excecoes: ['data', 'adm', 'entrada_prevista', 'codigo', 'obs', 'recorrente'],
@@ -29,7 +29,12 @@ export interface ConfigGeral {
   toleranciaMin: number
   entradaPadraoMin: number
   horarioCorteMin: number | null // antes disso, o bot não classifica o dia de hoje
+  // Só pro relatório de pontualidade: entrada antes de (previsto − isto) = adiantado.
+  // Não muda nenhum código da planilha (adiantado continua sendo ".").
+  adiantadoMin: number
 }
+
+export const ADIANTADO_MIN_PADRAO = 15
 
 export interface HorarioIndividual {
   adm: string
@@ -105,6 +110,12 @@ export function parseConfigPlanilha(g: GridsConfig, overrides: OverridesGeral = 
   const corteRaw = geralRow['horario_corte'] ?? ''
   const corte = corteRaw ? parseHora(corteRaw) : null
   if (corteRaw && corte === null) avisos.push(`${SECOES_CONFIG.geral}: horário de corte inválido ("${corteRaw}") — ignorado.`)
+  const adiRaw = geralRow['adiantado_min'] ?? ''
+  let adiantado = adiRaw ? Number(adiRaw) : ADIANTADO_MIN_PADRAO
+  if (!Number.isFinite(adiantado) || adiantado < 0) {
+    avisos.push(`${SECOES_CONFIG.geral}: "adiantado a partir de" inválido ("${adiRaw}") — usando ${ADIANTADO_MIN_PADRAO} min.`)
+    adiantado = ADIANTADO_MIN_PADRAO
+  }
 
   // ── Horários individuais ──
   const horarios: HorarioIndividual[] = []
@@ -183,7 +194,7 @@ export function parseConfigPlanilha(g: GridsConfig, overrides: OverridesGeral = 
   }
 
   return {
-    geral: { toleranciaMin: tol, entradaPadraoMin: entrada, horarioCorteMin: corte },
+    geral: { toleranciaMin: tol, entradaPadraoMin: entrada, horarioCorteMin: corte, adiantadoMin: adiantado },
     horarios,
     excecoes,
     apelidos,

@@ -13,6 +13,8 @@ import {
   registrarConferencias, registrarFeriados, reverterJustificativas, salvarRelatorio, salvarUltimoResultado, semanaDe,
   type EscritaDoDia, type Lote, type ResultadoDesfazer, type ResultadoEscrita,
 } from './service'
+import { consultarPontualidade, registrarPontualidade } from './pontualidade'
+import { csvPontualidade, type FiltrosPontualidade } from './core/pontualidade'
 import { dadosDaPlanilha, lerRegrasLocais, regrasDaTela, salvarRegras, type RegrasEditaveis } from './regras'
 import type { SheetGateway } from './sheets/gateway'
 
@@ -46,6 +48,11 @@ function mostrarNaTela(lote: Lote, modo: 'gravado' | 'simulacao', gravadas = 0, 
   gravadasNaTela = gravadas
   planosNaTela = new Map(lote.planos.map(p => [p.data, p]))
   salvarUltimoResultado({ quando, modo, lote, gravadas })
+  guardarPontualidade(lote.planos)
+}
+// Histórico do relatório de pontualidade — falhar aqui nunca atrapalha o preenchimento.
+function guardarPontualidade(planos: Plano[]): void {
+  try { registrarPontualidade(planos) } catch (err: any) { logger.warn(`[pontualidade] não deu pra guardar o histórico: ${err.message}`) }
 }
 // Justificar/desfazer mudam os planos já na tela: regrava o último resultado e,
 // se o dia já estava registrado como conferido, atualiza as pendências dele.
@@ -55,6 +62,7 @@ function planosMudaram(planos: Plano[]): void {
   salvarUltimoResultado({ quando: ultimo?.quando ?? new Date().toISOString(), modo: modoNaTela, lote: loteNaTela, gravadas: gravadasNaTela })
   const conferidos = lerConferencias()
   registrarConferencias(planos.filter(p => conferidos[p.data]))
+  guardarPontualidade(planos)
 }
 // Dias que a gravação de fato concluiu (se parou no meio, só os anteriores à falha).
 function registrarGravacao(lote: Lote, escrita: { dias: EscritaDoDia[]; erro: string | null }): number {
@@ -114,10 +122,10 @@ function ensureDir(d: string): string {
   return d
 }
 
-// Uma janela só, maximizada: Início, Horários e regras e Configurações são
+// Uma janela só, maximizada: Início, Horários e regras, Relatórios e Configurações são
 // telas que se revezam dentro dela (o estado do Início fica aqui no processo
 // principal e volta quando a tela reabre).
-type Tela = 'app.html' | 'regras.html' | 'config.html'
+type Tela = 'app.html' | 'regras.html' | 'config.html' | 'relatorios.html'
 
 function criarJanela(): BrowserWindow {
   const w = new BrowserWindow({
@@ -157,6 +165,7 @@ function mostrarTela(tela: Tela): void {
 const openAppWindow = () => mostrarTela('app.html')
 const openRegrasWindow = () => mostrarTela('regras.html')
 const openConfigWindow = () => mostrarTela('config.html')
+const openRelatoriosWindow = () => mostrarTela('relatorios.html')
 
 // Planilha se estiver configurada; null se ainda não (tela de regras funciona sem).
 function gatewayOpcional(): SheetGateway | null {
@@ -396,7 +405,40 @@ function registerIPC(): void {
     }
   })
 
-  ipcMain.handle('abrir-relatorios', () => shell.openPath(ensureDir(getRelatoriosDir())))
+  ipcMain.handle('abrir-pasta-relatorios', () => shell.openPath(ensureDir(getRelatoriosDir())))
+  ipcMain.handle('abrir-relatorios', () => openRelatoriosWindow())
+
+  // Relatório de pontualidade: lê o histórico local (pontualidade.json) — sem
+  // ir à rede, então cada mudança de filtro responde na hora.
+  ipcMain.handle('pontualidade', (_e, filtros: FiltrosPontualidade) => {
+    try {
+      return { ok: true, ...consultarPontualidade(filtros ?? {}) }
+    } catch (err: any) {
+      logger.error('[pontualidade]', err.message)
+      return { ok: false, message: err.message ?? 'Erro desconhecido' }
+    }
+  })
+
+  // Exporta o que está filtrado na tela (o filtro é refeito aqui — a tela só manda os critérios).
+  ipcMain.handle('pontualidade-exportar', async (_e, filtros: FiltrosPontualidade) => {
+    try {
+      const r = consultarPontualidade(filtros ?? {})
+      if (!r.registros.length) return { ok: false, message: 'Nada para exportar com esses filtros.' }
+      const sufixo = [filtros?.inicio, filtros?.fim].filter(Boolean).join('_a_') || 'tudo'
+      const res = await dialog.showSaveDialog(appWin!, {
+        title: 'Exportar relatório de pontualidade',
+        defaultPath: path.join(app.getPath('documents'), `pontualidade_${sufixo}.csv`),
+        filters: [{ name: 'Planilha (CSV)', extensions: ['csv'] }],
+      })
+      if (res.canceled || !res.filePath) return { ok: false, cancelado: true }
+      fs.writeFileSync(res.filePath, csvPontualidade(r.registros), 'utf-8')
+      return { ok: true, arquivo: res.filePath, linhas: r.registros.length }
+    } catch (err: any) {
+      logger.error('[pontualidade] exportar:', err.message)
+      return { ok: false, message: err.message ?? 'Erro desconhecido' }
+    }
+  })
+  ipcMain.handle('mostrar-arquivo', (_e, arquivo: string) => shell.showItemInFolder(arquivo))
 
   // Status do cabeçalho: o que já está configurado (sem ir à rede — é instantâneo).
   ipcMain.handle('status-bot', () => {
