@@ -112,6 +112,14 @@ input:invalid { border-color: #D0453A; }
 input[type="checkbox"], input[type="radio"] { accent-color: var(--acao); width: 16px; height: 16px; margin: 0; }
 .caixa { display: inline-flex; align-items: center; gap: 8px; font-size: 13px; color: var(--texto-2); cursor: pointer; user-select: none; }
 
+/* O Chromium não deixa estilizar o painel do calendário em si — só o campo e o ícone que o abre. */
+input[type="date"]::-webkit-datetime-edit { color: var(--texto); }
+input[type="date"]::-webkit-calendar-picker-indicator {
+  margin-left: 6px; padding: 4px; border-radius: 6px; cursor: pointer; opacity: .55;
+  transition: opacity .15s, background .15s;
+}
+input[type="date"]::-webkit-calendar-picker-indicator:hover { opacity: .9; background: var(--realce); }
+
 /* Alternador em pílula (mesma altura/borda dos campos): um interruptor pequeno + texto.
    Ligado, a pílula inteira fica azul-suave — dá pra ver o modo de relance. */
 .alternar {
@@ -201,3 +209,11 @@ td.mono, td .mono { font-size: 13px; }
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { animation-duration: .01ms !important; animation-iteration-count: 1 !important; transition-duration: .01ms !important; }
 }
+
+/* ── Barra de rolagem ──────────────────────────────────── */
+* { scrollbar-width: thin; scrollbar-color: #D6D6D1 transparent; }
+::-webkit-scrollbar { width: 10px; height: 10px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background-color: #D6D6D1; border-radius: 99px; border: 2px solid transparent; background-clip: padding-box; }
+::-webkit-scrollbar-thumb:hover { background-color: #B8B8B2; }
+::-webkit-scrollbar-corner { background: transparent; }

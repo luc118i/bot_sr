@@ -32,6 +32,22 @@
     .grupo .mais { all: unset; cursor: pointer; font-size: 12px; color: var(--acao); margin-top: 4px; }
     .grupo.calmo { background: transparent; border-style: dashed; }
     .equipe-nota { font-size: 13px; color: var(--texto-3); }
+
+    /* guia de seções: navegação rápida entre os blocos desta tela, fixa abaixo do cabeçalho */
+    .guia-secoes {
+      position: sticky; top: 60px; z-index: 4; display: flex; justify-content: center; align-items: center;
+      max-height: 56px; padding: 10px 28px; background: #F6F6F4;
+      border-bottom: 1px solid var(--borda); overflow: hidden;
+      transition: max-height .28s ease, opacity .2s ease, padding-top .28s ease, padding-bottom .28s ease, border-color .28s ease;
+    }
+    .guia-secoes.recolhido { max-height: 0; padding-top: 0; padding-bottom: 0; opacity: 0; border-bottom-color: transparent; pointer-events: none; }
+    #equipe, #freq, #secAtencao, #secAtividade { scroll-margin-top: 140px; }
+    /* destaque de 3s na seção alvo ao clicar numa aba do guia */
+    @keyframes destacarSecao {
+      0%, 75% { box-shadow: var(--sombra-1), 0 0 0 3px var(--acao-borda), 0 0 0 7px rgba(36, 81, 214, .16); }
+      100% { box-shadow: var(--sombra-1); }
+    }
+    .secao-destaque { animation: destacarSecao 3s ease-out; }
     .cmd { margin-top: 6px; width: min(760px, 100%); height: 60px; display: flex; align-items: center; gap: 12px; padding: 0 8px 0 20px; background: var(--superficie); border: 1px solid var(--borda-forte); border-radius: 18px; box-shadow: var(--sombra-2); transition: border-color .2s, box-shadow .2s; }
     .cmd:focus-within { border-color: var(--acao); box-shadow: 0 0 0 4px rgba(36, 81, 214, .12), 0 8px 28px rgba(20, 20, 22, .06); }
     .cmd input { flex-grow: 1; min-width: 0; border: 0; height: 100%; font-size: 16px; padding: 0; background: transparent; box-shadow: none !important; }
@@ -160,6 +176,15 @@
     </div>
   </header>
 
+  <nav class="guia-secoes" aria-label="Seções desta página" id="guiaSecoes">
+    <div class="segmentos">
+      <button class="aba" type="button" data-alvo="equipe">Equipe hoje</button>
+      <button class="aba" type="button" data-alvo="freq">Frequência</button>
+      <button class="aba" type="button" data-alvo="secAtencao">Atenção</button>
+      <button class="aba" type="button" data-alvo="secAtividade">Atividade</button>
+    </div>
+  </nav>
+
   <main>
     <section class="painel-dia" aria-label="Hoje">
       <div class="cabeca-dia">
@@ -218,11 +243,12 @@
     <div class="grade">
       <section class="cartao" aria-label="Frequência" id="freq"></section>
       <div class="lateral">
-        <section class="cartao" aria-label="Precisa da sua atenção" style="padding-bottom:12px">
+        <section class="cartao" aria-label="Folga, férias e atestado hoje" id="afastamentosHoje"></section>
+        <section class="cartao" aria-label="Precisa da sua atenção" id="secAtencao" style="padding-bottom:12px">
           <h2 style="margin:0 8px 8px">Precisa da sua atenção</h2>
           <div id="atencao"></div>
         </section>
-        <section class="cartao" aria-label="Atividade recente">
+        <section class="cartao" aria-label="Atividade recente" id="secAtividade">
           <div class="cabeca" style="margin-bottom:12px"><h2 class="titulo-secao">Atividade recente</h2><a id="lnkRelatorios">Relatórios</a></div>
           <div class="linha-tempo" id="atividade"></div>
         </section>
@@ -790,12 +816,13 @@
     let panoramaAtual = null
     async function carregarPanorama() {
       const box = $('equipe')
-      if (!panoramaAtual) box.replaceChildren(cabecaEquipe('Lendo o ponto e a planilha de hoje…'), el('div', { className: 'sk', style: 'height:64px' }))
+      if (!panoramaAtual) { box.replaceChildren(cabecaEquipe('Lendo o ponto e a planilha de hoje…'), el('div', { className: 'sk', style: 'height:64px' })); renderAfastamentosHoje(null) }
       else box.style.opacity = '.6' // mantém o anterior enquanto atualiza (sem piscar)
       const r = await ipc(() => window.agent.panoramaDia())
       box.style.opacity = ''
       if (!r.ok) {
         const acao = /Configura|ponto|planilha|Apps Script|login|senha/i.test(r.message || '') ? el('button', { className: 'btn primario pequeno', textContent: 'Abrir Configurações', onClick: () => window.agent.abrirConfig() }) : null
+        afastamentosEstado('Configure o ponto e a planilha pra ver quem está afastado hoje.')
         return box.replaceChildren(cabecaEquipe(''), el('div', { className: 'alerta aviso' }, el('span', { className: 'ponto' }), el('div', {}, el('b', { textContent: 'Não deu pra ver a equipe de hoje agora' }), el('span', { textContent: r.message }), acao ? el('div', { className: 'acoes' }, acao) : null)))
       }
       naoUtilHoje = !!r.naoUtil
@@ -803,6 +830,7 @@
       renderEstadoChamada()
       if (r.naoUtil) {
         panoramaAtual = null
+        afastamentosEstado(/domingo/i.test(r.naoUtil) ? 'Hoje é domingo — não há chamada.' : 'Hoje é feriado — não há chamada.')
         return box.replaceChildren(cabecaEquipe(''), el('div', { className: 'equipe-nota', textContent: /domingo/i.test(r.naoUtil) ? 'Hoje é domingo — não há chamada.' : 'Hoje é feriado na planilha (coluna do dia oculta) — não há chamada.' }))
       }
       panoramaAtual = r
@@ -829,6 +857,7 @@
         grupos.length ? el('div', { className: 'afastados' }, ...grupos)
           : el('div', { className: 'equipe-nota', textContent: 'Ninguém afastado e todo mundo já bateu ponto.' }),
         afastados ? null : el('div', { className: 'equipe-nota', style: 'margin-top:8px', textContent: 'Ninguém de folga, férias ou atestado hoje.' }))
+      renderAfastamentosHoje(p)
     }
     // Um bloco por situação; listas longas mostram 6 nomes e "mais N".
     function grupo(rotulo, cor, pessoas) {
@@ -839,6 +868,32 @@
       const mais = pessoas.length > MAX ? el('button', { className: 'mais', textContent: `mais ${pessoas.length - MAX}`, onClick: e => { mostrar(pessoas.length); e.currentTarget.remove() } }) : null
       return el('div', { className: 'grupo' + (rotulo === 'Ainda sem ponto' ? ' calmo' : '') },
         el('h3', {}, el('i', { style: `background:${cor}` }), rotulo, el('span', { textContent: String(pessoas.length) })), lista, mais)
+    }
+
+    // ── folga, férias e atestado de hoje: recorte rápido na lateral, mesma fonte do painel "Sua equipe hoje" ──
+    const GRUPOS_AFASTAMENTO = [
+      ['folga', 'Folga', '#5FB3A6'],
+      ['ferias', 'Férias', '#2451D6'],
+      ['atestado', 'Atestado', '#7A5AF8'],
+    ]
+    function cabecaAfastamentos(total) {
+      return el('div', { className: 'cabeca', style: 'margin-bottom:12px' },
+        el('div', {}, el('h2', { className: 'titulo-secao', textContent: 'Folga, férias e atestado' }), el('div', { className: 'sub', textContent: 'Hoje' })),
+        total ? el('span', { className: 'badge', textContent: String(total) }) : null)
+    }
+    function afastamentosEstado(texto) {
+      $('afastamentosHoje').replaceChildren(cabecaAfastamentos(), el('div', { className: 'equipe-nota', textContent: texto }))
+    }
+    function renderAfastamentosHoje(p) {
+      const box = $('afastamentosHoje')
+      if (!p) return box.replaceChildren(cabecaAfastamentos(), el('div', { className: 'sk', style: 'height:48px' }))
+      const c = p.contagem
+      const total = c.folga + c.ferias + c.atestado
+      const grupos = GRUPOS_AFASTAMENTO.filter(([k]) => c[k]).map(([k, rot, cor]) => grupo(rot, cor, p.pessoas.filter(x => x.situacao === k)))
+      box.replaceChildren(
+        cabecaAfastamentos(total),
+        grupos.length ? el('div', { className: 'afastados' }, ...grupos)
+          : el('div', { className: 'equipe-nota', textContent: 'Ninguém de folga, férias ou atestado hoje.' }))
     }
     carregarPanorama()
 
@@ -1012,6 +1067,73 @@
       renderSemana()
     })()
     $('cmd').focus()
+
+    // ── guia de seções: clique pula pro bloco e fica marcado por 3s; fora disso, a aba
+    // ativa é a da seção cujo topo já passou da linha logo abaixo do guia (não dá pra
+    // comparar "quanto aparece de cada uma" — a coluna lateral e a principal correm em
+    // paralelo com alturas diferentes, então essa conta ficava ambígua) ──
+    ;(() => {
+      const guia = $('guiaSecoes')
+      const abas = [...document.querySelectorAll('#guiaSecoes .aba')]
+      const alvos = abas.map(a => a.dataset.alvo).filter(id => $(id))
+      const LINHA = 140 // mesma referência do scroll-margin-top dos alvos
+      const marcar = id => { for (const a of abas) a.setAttribute('aria-selected', String(a.dataset.alvo === id)) }
+      let travado = false, destravar = null, elDestacado = null
+      let ultimoY = window.scrollY, acumulado = 0, sentido = 0 // sentido: -1 subindo, 1 descendo
+      let bloqueadoAte = 0 // enquanto a transição anterior do guia ainda roda, ignora novos disparos
+      function peloScroll() {
+        if (travado) return
+        let atual = alvos[0]
+        for (const id of alvos) if ($(id).getBoundingClientRect().top - LINHA <= 0) atual = id
+        marcar(atual)
+      }
+      // Recolhe suavemente ao rolar pra baixo (mais espaço pro conteúdo); volta ao rolar pra
+      // cima ou perto do topo. Só alterna depois de uma rolagem consistente de ~24px num
+      // mesmo sentido — sem isso, qualquer tremedeira da rolagem (comum em trackpad/inercial)
+      // liga e desliga a classe a cada pixel e reinicia a transição sem parar, travando a tela.
+      const LIMIAR = 24
+      function controlarGuia() {
+        const y = Math.max(0, window.scrollY)
+        const delta = y - ultimoY
+        ultimoY = y
+        if (travado || delta === 0) return
+        if (y <= 80) { guia.classList.remove('recolhido'); acumulado = 0; sentido = 0; return }
+        const novoSentido = delta > 0 ? 1 : -1
+        acumulado = novoSentido === sentido ? acumulado + Math.abs(delta) : Math.abs(delta)
+        sentido = novoSentido
+        if (acumulado < LIMIAR) return
+        acumulado = 0
+        if (Date.now() < bloqueadoAte) return // transição anterior ainda rodando — espera ela terminar
+        guia.classList.toggle('recolhido', sentido === 1)
+        bloqueadoAte = Date.now() + 320
+      }
+      for (const a of abas) a.addEventListener('click', () => {
+        marcar(a.dataset.alvo)
+        guia.classList.remove('recolhido')
+        const alvo = $(a.dataset.alvo)
+        alvo?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+        a.blur()
+        if (elDestacado) elDestacado.classList.remove('secao-destaque')
+        if (alvo) {
+          void alvo.offsetWidth // força o navegador a "esquecer" a animação anterior, pra poder tocar de novo
+          alvo.classList.add('secao-destaque')
+          alvo.addEventListener('animationend', () => alvo.classList.remove('secao-destaque'), { once: true })
+          elDestacado = alvo
+        }
+        travado = true
+        clearTimeout(destravar)
+        destravar = setTimeout(() => { travado = false; ultimoY = window.scrollY; acumulado = 0; sentido = 0; peloScroll() }, 3000)
+      })
+      // rAF agrupa leitura (getBoundingClientRect) e escrita (classList) num só passo por quadro —
+      // sem isso, cada evento de scroll força um recálculo de layout e a tela trava ao rolar.
+      let agendado = false
+      window.addEventListener('scroll', () => {
+        if (agendado) return
+        agendado = true
+        requestAnimationFrame(() => { agendado = false; peloScroll(); controlarGuia() })
+      }, { passive: true })
+      peloScroll()
+    })()
   </script>
 </body>
 </html>
