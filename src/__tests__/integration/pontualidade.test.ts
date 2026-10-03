@@ -66,6 +66,9 @@ describe('pontualidade: classificação a partir do plano', () => {
     assert.deepEqual(rel.registros.map(r => r.adm), ['76'])
     assert.deepEqual(rel.contagem, c) // indicadores ignoram o filtro de situação (eles são o seletor)
     assert.equal(rel.minutosAtraso, 36)
+    assert.deepEqual(rel.porDia.map(d => [d.chave, d.contagem.pontualidadePct]), [['2026-09-28', c.pontualidadePct]]) // taxa: idem
+    assert.deepEqual(rel.colaboradores.map(x => x.adm), ['76']) // ranking e motivos seguem o filtro
+    assert.deepEqual(rel.porMotivo, [{ motivo: 'Atraso além da tolerância', total: 1 }])
     assert.deepEqual(rel.opcoes.setores, ['Expedição', 'Logística']) // opções vêm do histórico todo, não do filtro
     assert.equal(montarRelatorio(regs, { busca: 'marcos fictício' }).registros.length, 1) // sem acento, parcial
     assert.equal(montarRelatorio(regs, { setor: 'Expedição' }).registros.length, 1)

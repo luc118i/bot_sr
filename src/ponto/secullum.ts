@@ -85,7 +85,7 @@ export class SecullumClient implements FontePonto {
 
   // Mesmo login que a tela faz. Só é usado se a API recusar o Basic direto
   // (401) — alguns bancos podem exigir o login antes da primeira consulta.
-  private async login(): Promise<void> {
+  private async login(): Promise<Response> {
     const r = await this.chamar('/Login', {
       method: 'POST',
       headers: this.headers(true),
@@ -99,6 +99,16 @@ export class SecullumClient implements FontePonto {
     })
     if (r.status === 400 || r.status === 401) throw new PontoAuthError('Número ou senha do ponto inválidos.')
     if (!r.ok) throw new Error(`Login no ponto falhou (HTTP ${r.status}).`)
+    return r
+  }
+
+  /** Nome de quem está logado, como o servidor devolve no login (pra saudação).
+   *  `campos` = nomes dos campos da resposta (sem valores) — ajuda a ajustar se o nome não vier. */
+  async nomeDoUsuario(): Promise<{ nome: string | null; campos: string[] }> {
+    const texto = await (await this.login()).text()
+    let corpo: unknown
+    try { corpo = JSON.parse(texto) } catch { return { nome: null, campos: [] } }
+    return { nome: extrairNome(corpo), campos: corpo && typeof corpo === 'object' ? Object.keys(corpo) : [] }
   }
 
   async pontoDiario(data: string): Promise<LinhaPontoApi[]> {
@@ -126,4 +136,28 @@ export class SecullumClient implements FontePonto {
     const lista = await this.pontoDiario(hoje)
     return `Login ok — ${lista.length} colaborador(es) no acompanhamento de hoje.`
   }
+}
+
+// O formato da resposta do login não é documentado: procura o nome nos campos
+// mais prováveis (até 3 níveis) e, se vier um token JWT, nas declarações dele.
+const CHAVES_NOME = ['nome', 'nomefuncionario', 'funcionarionome', 'nomeusuario', 'usuarionome', 'nomecompleto', 'name', 'unique_name', 'given_name']
+
+export function extrairNome(v: unknown, nivel = 0): string | null {
+  if (!v || typeof v !== 'object' || nivel > 3) return null
+  const entradas = Object.entries(v as Record<string, unknown>)
+  for (const chave of CHAVES_NOME) {
+    const achou = entradas.find(([k, x]) => k.toLowerCase() === chave && typeof x === 'string' && /[a-zà-ú]{2}/i.test(x))
+    if (achou) return (achou[1] as string).trim()
+  }
+  for (const [, x] of entradas) {
+    if (typeof x === 'string' && /^[\w-]+\.[\w-]+\.[\w-]+$/.test(x)) {
+      try {
+        const nome = extrairNome(JSON.parse(Buffer.from(x.split('.')[1]!, 'base64url').toString('utf-8')), nivel + 1)
+        if (nome) return nome
+      } catch { /* não era JWT */ }
+    }
+    const nome = extrairNome(x, nivel + 1)
+    if (nome) return nome
+  }
+  return null
 }

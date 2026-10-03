@@ -18,6 +18,8 @@ contextBridge.exposeInMainWorld('agent', {
   desfazer: () => ipcRenderer.invoke('desfazer'),
   desfazerDeRelatorio: () => ipcRenderer.invoke('desfazer-de-relatorio'),
   abrirRelatorios: () => ipcRenderer.invoke('abrir-relatorios'),
+  perfil: () => ipcRenderer.invoke('perfil'),
+  panoramaDia: () => ipcRenderer.invoke('panorama-dia'),
   abrirPastaRelatorios: () => ipcRenderer.invoke('abrir-pasta-relatorios'),
   pontualidade: (filtros: unknown) => ipcRenderer.invoke('pontualidade', filtros),
   exportarPontualidade: (filtros: unknown) => ipcRenderer.invoke('pontualidade-exportar', filtros),

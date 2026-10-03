@@ -8,8 +8,30 @@
   <style>
     main { max-width: 1200px; margin: 0 auto; padding: 36px 32px 72px; display: flex; flex-direction: column; gap: 24px; }
     .hero { display: flex; flex-direction: column; align-items: center; gap: 14px; }
-    .hero .quando { font-size: 13px; font-weight: 500; color: var(--texto-3); }
-    .hero h1 { font-size: 36px; line-height: 1.1; font-weight: 600; letter-spacing: -.025em; text-align: center; }
+    .hero h2 { font-size: 22px; line-height: 1.2; font-weight: 600; letter-spacing: -.02em; text-align: center; }
+
+    /* painel do dia: saudação → equipe → afastados → iniciar chamada */
+    .painel-dia { display: flex; flex-direction: column; gap: 16px; }
+    .cabeca-dia { display: flex; justify-content: space-between; align-items: flex-end; gap: 20px; flex-wrap: wrap; }
+    .cabeca-dia .quando { font-size: 13px; font-weight: 500; color: var(--texto-3); }
+    .cabeca-dia h1 { font-size: 28px; line-height: 1.15; font-weight: 600; letter-spacing: -.02em; margin-top: 2px; }
+    .cabeca-dia p { font-size: 14px; color: var(--texto-2); margin-top: 4px; }
+    .chamada { display: flex; flex-direction: column; align-items: flex-end; gap: 6px; }
+    .chamada .btn { height: 52px; padding: 0 28px; border-radius: 14px; font-size: 16px; letter-spacing: .01em; box-shadow: 0 6px 18px rgba(36, 81, 214, .24); }
+    .chamada .btn:disabled { box-shadow: none; }
+    .estado-chamada { font-size: 13px; color: var(--texto-3); }
+    .estado-chamada.ok { color: var(--sucesso); }
+    .estado-chamada.pend { color: var(--atencao); }
+    .equipe .kpis { grid-template-columns: repeat(5, minmax(0, 1fr)); }
+    .afastados { display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); gap: 10px; }
+    .grupo { padding: 12px 14px; border-radius: 12px; background: var(--superficie-2); border: 1px solid #EEEEEB; }
+    .grupo h3 { display: flex; align-items: center; gap: 8px; font-size: 13px; font-weight: 600; }
+    .grupo h3 i { width: 8px; height: 8px; border-radius: 99px; }
+    .grupo h3 span { margin-left: auto; font-weight: 500; color: var(--texto-3); font-variant-numeric: tabular-nums; }
+    .grupo ul { list-style: none; margin: 6px 0 0; padding: 0; display: flex; flex-direction: column; gap: 2px; font-size: 13px; color: var(--texto-2); }
+    .grupo .mais { all: unset; cursor: pointer; font-size: 12px; color: var(--acao); margin-top: 4px; }
+    .grupo.calmo { background: transparent; border-style: dashed; }
+    .equipe-nota { font-size: 13px; color: var(--texto-3); }
     .cmd { margin-top: 6px; width: min(760px, 100%); height: 60px; display: flex; align-items: center; gap: 12px; padding: 0 8px 0 20px; background: var(--superficie); border: 1px solid var(--borda-forte); border-radius: 18px; box-shadow: var(--sombra-2); transition: border-color .2s, box-shadow .2s; }
     .cmd:focus-within { border-color: var(--acao); box-shadow: 0 0 0 4px rgba(36, 81, 214, .12), 0 8px 28px rgba(20, 20, 22, .06); }
     .cmd input { flex-grow: 1; min-width: 0; border: 0; height: 100%; font-size: 16px; padding: 0; background: transparent; box-shadow: none !important; }
@@ -111,7 +133,8 @@
     .arquivo { padding: 8px 12px; border: 1px dashed #CBD5E1; border-radius: 10px; color: var(--texto-3); max-width: 360px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
     @media (max-width: 900px) {
       main { padding: 24px 18px 72px; }
-      .hero h1 { font-size: 28px; }
+      .cabeca-dia h1 { font-size: 24px; }
+      .chamada { align-items: stretch; width: 100%; }
       .grade { grid-template-columns: minmax(0, 1fr); }
       .kpis { grid-template-columns: repeat(2, minmax(0, 1fr)); row-gap: 4px; }
       .topo nav { display: none; }
@@ -138,9 +161,23 @@
   </header>
 
   <main>
+    <section class="painel-dia" aria-label="Hoje">
+      <div class="cabeca-dia">
+        <div>
+          <div class="quando" id="hoje"></div>
+          <h1 id="saudacao">Olá!</h1>
+          <p>Confira a situação da sua equipe e inicie a chamada quando estiver pronto.</p>
+        </div>
+        <div class="chamada">
+          <button class="btn primario" id="btnChamada">Iniciar chamada</button>
+          <span class="estado-chamada" id="estadoChamada" aria-live="polite"></span>
+        </div>
+      </div>
+      <section class="cartao equipe" id="equipe" aria-label="Sua equipe hoje"></section>
+    </section>
+
     <section class="hero">
-      <div class="quando" id="hoje"></div>
-      <h1>O que você deseja consultar?</h1>
+      <h2>O que mais você quer fazer?</h2>
       <form class="cmd" id="formCmd" autocomplete="off">
         <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#6B6B73" stroke-width="1.8" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>
         <input type="text" id="cmd" aria-label="Comando para o SR_dados" placeholder="Preencher hoje, conferir semana de 21/09, simular ontem…" />
@@ -219,6 +256,7 @@
     let ultimoLote = null        // último resultado (alimenta frequência, atenção e detalhes)
     let conferencias = {}        // data → última conferência gravada (conferencias.json)
     let ocupadoAgora = false
+    let naoUtilHoje = false     // domingo/feriado: sem chamada hoje
 
     let toastTimer = null
     function toast(texto, acao) {
@@ -277,7 +315,7 @@
     // (ex.: "Gravar agora" depois de uma simulação) e a tela não pode dizer "Simulando…".
     function ocupado(sim, rotulo) {
       ocupadoAgora = sim
-      for (const b of document.querySelectorAll('#chips .chip, #btnCmd, #data')) b.disabled = sim
+      for (const b of document.querySelectorAll('#chips .chip, #btnCmd, #data, #btnChamada')) b.disabled = sim || (b.id === 'btnChamada' && naoUtilHoje)
       if (sim) statusOcupado(rotulo || ($('simular').checked ? 'Simulando…' : 'Trabalhando…'))
       else statusNormal()
     }
@@ -316,13 +354,13 @@
     }
 
     // ── execução com progresso ──
-    async function rodar({ acao, data, simular }, texto) {
+    async function rodar({ acao, data, simular, forcar }, texto) {
       if (ocupadoAgora) return
       if (!data) return responder(texto, [el('p', { className: 'fala', textContent: 'Escolha um dia no calendário.' })])
       if (data > hojeISO()) return responder(texto, [el('p', { className: 'fala', textContent: 'Esse dia ainda não aconteceu — escolha hoje ou uma data anterior.' })])
       ocupado(true)
       $('resposta').hidden = true
-      const r = await ipc(() => window.agent.preencher({ data, modo: acao, apenasConferir: simular, forcar: $('forcar').checked }))
+      const r = await ipc(() => window.agent.preencher({ data, modo: acao, apenasConferir: simular, forcar: forcar ?? $('forcar').checked }))
       ocupado(false)
       if (!r.ok) {
         $('progresso').hidden = true
@@ -602,7 +640,7 @@
       // Dias desta semana (até hoje, sem domingo) sem conferência gravada.
       const hoje = hojeISO()
       const faltam = diasDaSemana(hoje).filter(d => d <= hoje && !conferencias[d])
-      if (faltam.includes(hoje)) add('#2451D6', 'Hoje ainda não foi conferido', 'O bot lembra o que já foi feito — quando conferir, some daqui.', 'Preencher hoje', () => { $('data').value = hoje; renderSemana(); rodar({ acao: 'dia', data: hoje, simular: $('simular').checked }, 'Preencher hoje') })
+      if (faltam.includes(hoje)) add('#2451D6', 'Hoje ainda não foi conferido', 'O bot lembra o que já foi feito — quando conferir, some daqui.', 'Iniciar chamada', iniciarChamada)
       const antes = faltam.filter(d => d !== hoje)
       if (antes.length) add('#E3A13B', `${antes.map(nomeDia).join(', ')} ${antes.length === 1 ? 'não foi conferido' : 'não foram conferidos'}`, 'Nenhum preenchimento gravado nesses dias.', 'Conferir semana', () => rodar({ acao: 'semana', data: hoje, simular: $('simular').checked }, 'Conferir semana'))
       if (ultimoLote) {
@@ -709,10 +747,106 @@
       saida.replaceChildren(frase, ...meses, acoes)
     }
 
+    // ── painel do dia (saudação, equipe hoje, iniciar chamada) ──
+    function saudacao(nome) {
+      const h = new Date().getHours()
+      return `${h < 12 ? 'Bom dia' : h < 18 ? 'Boa tarde' : 'Boa noite'}${nome ? ', ' + nome : ''}!`
+    }
+    $('saudacao').textContent = saudacao(null)
+    ;(async () => {
+      try { const p = await window.agent.perfil(); if (p && p.nome) $('saudacao').textContent = saudacao(p.nome) } catch { /* fica a genérica */ }
+    })()
+
+    // Estado da chamada de hoje: o que o app lembra (conferencias.json).
+    function renderEstadoChamada() {
+      const c = conferencias[hojeISO()], e = $('estadoChamada'), b = $('btnChamada')
+      if (naoUtilHoje) { e.className = 'estado-chamada'; e.textContent = 'Hoje não há chamada'; b.textContent = 'Iniciar chamada'; return }
+      if (!c) { e.className = 'estado-chamada'; e.textContent = 'Chamada de hoje ainda não feita'; b.textContent = 'Iniciar chamada'; return }
+      e.className = 'estado-chamada ' + (c.pendencias ? 'pend' : 'ok')
+      e.textContent = `Chamada feita às ${quando(c.quando).replace(/^Hoje, /, '')}` + (c.pendencias ? ` · ${plural(c.pendencias, 'pendência', 'pendências')}` : ' · tudo certo')
+      b.textContent = 'Atualizar chamada' // rodar de novo completa quem chegou depois; nunca sobrescreve
+    }
+
+    // A chamada é o "Preencher dia" de hoje, sempre liberado (mesmo antes do horário de corte):
+    // quem bateu ganha "." ou "P", quem ainda não bateu fica pendente (nunca "F").
+    async function iniciarChamada() {
+      const hoje = hojeISO()
+      $('data').value = hoje
+      renderSemana()
+      await rodar({ acao: 'dia', data: hoje, simular: false, forcar: true }, $('btnChamada').textContent)
+      carregarPanorama()
+    }
+    $('btnChamada').addEventListener('click', iniciarChamada)
+
+    const GRUPOS = [
+      ['folga', 'Folga', '#5FB3A6'],
+      ['ferias', 'Férias', '#2451D6'],
+      ['atestado', 'Atestado', '#7A5AF8'],
+      ['falta', 'Falta', '#B42318'],
+      ['outros', 'Suspensão / viagem', '#8A8A92'],
+      ['pendente', 'Para revisão (nome ou linha)', '#E3A13B'],
+      ['sem_ponto', 'Ainda sem ponto', '#C4C4BE'],
+    ]
+    let panoramaAtual = null
+    async function carregarPanorama() {
+      const box = $('equipe')
+      if (!panoramaAtual) box.replaceChildren(cabecaEquipe('Lendo o ponto e a planilha de hoje…'), el('div', { className: 'sk', style: 'height:64px' }))
+      else box.style.opacity = '.6' // mantém o anterior enquanto atualiza (sem piscar)
+      const r = await ipc(() => window.agent.panoramaDia())
+      box.style.opacity = ''
+      if (!r.ok) {
+        const acao = /Configura|ponto|planilha|Apps Script|login|senha/i.test(r.message || '') ? el('button', { className: 'btn primario pequeno', textContent: 'Abrir Configurações', onClick: () => window.agent.abrirConfig() }) : null
+        return box.replaceChildren(cabecaEquipe(''), el('div', { className: 'alerta aviso' }, el('span', { className: 'ponto' }), el('div', {}, el('b', { textContent: 'Não deu pra ver a equipe de hoje agora' }), el('span', { textContent: r.message }), acao ? el('div', { className: 'acoes' }, acao) : null)))
+      }
+      naoUtilHoje = !!r.naoUtil
+      $('btnChamada').disabled = naoUtilHoje || ocupadoAgora
+      renderEstadoChamada()
+      if (r.naoUtil) {
+        panoramaAtual = null
+        return box.replaceChildren(cabecaEquipe(''), el('div', { className: 'equipe-nota', textContent: /domingo/i.test(r.naoUtil) ? 'Hoje é domingo — não há chamada.' : 'Hoje é feriado na planilha (coluna do dia oculta) — não há chamada.' }))
+      }
+      panoramaAtual = r
+      renderEquipe(r)
+    }
+    function cabecaEquipe(sub) {
+      return el('div', { className: 'cabeca' },
+        el('div', {}, el('h2', { className: 'titulo-secao', textContent: 'Sua equipe hoje' }), el('div', { className: 'sub', textContent: sub })),
+        el('a', { textContent: 'Atualizar', onClick: carregarPanorama }))
+    }
+    function renderEquipe(p) {
+      const c = p.contagem
+      const kpi = (rot, v, d) => el('div', { className: 'kpi' }, el('span', { className: 'r', textContent: rot }), el('span', { className: 'v', textContent: String(v) }), el('span', { className: 'd', textContent: d }))
+      const afastados = c.folga + c.ferias + c.atestado + c.falta + c.outros
+      const grupos = GRUPOS.filter(([k]) => c[k]).map(([k, rot, cor]) => grupo(rot, cor, p.pessoas.filter(x => x.situacao === k)))
+      $('equipe').replaceChildren(
+        cabecaEquipe(`Ponto, planilha (aba ${p.aba}) e exceções de hoje · atualizado às ${horaAgora()}`),
+        el('div', { className: 'kpis' },
+          kpi('Total na equipe', p.total, 'do seu ponto'),
+          kpi('Em atividade', c.presente, c.sem_ponto ? `${c.sem_ponto} ainda sem ponto` : 'já bateram ponto'),
+          kpi('De folga', c.folga, 'FO na planilha'),
+          kpi('De férias', c.ferias, 'FE ou "FÉRIAS" no ponto'),
+          kpi('Em atestado', c.atestado, 'AT/AC na planilha')),
+        grupos.length ? el('div', { className: 'afastados' }, ...grupos)
+          : el('div', { className: 'equipe-nota', textContent: 'Ninguém afastado e todo mundo já bateu ponto.' }),
+        afastados ? null : el('div', { className: 'equipe-nota', style: 'margin-top:8px', textContent: 'Ninguém de folga, férias ou atestado hoje.' }))
+    }
+    // Um bloco por situação; listas longas mostram 6 nomes e "mais N".
+    function grupo(rotulo, cor, pessoas) {
+      const MAX = 6
+      const lista = el('ul')
+      const mostrar = n => lista.replaceChildren(...pessoas.slice(0, n).map(x => el('li', { textContent: x.nome, title: x.adm ? `ADM ${x.adm}${x.entrada ? ' · entrada ' + x.entrada : ''}` : '' })))
+      mostrar(MAX)
+      const mais = pessoas.length > MAX ? el('button', { className: 'mais', textContent: `mais ${pessoas.length - MAX}`, onClick: e => { mostrar(pessoas.length); e.currentTarget.remove() } }) : null
+      return el('div', { className: 'grupo' + (rotulo === 'Ainda sem ponto' ? ' calmo' : '') },
+        el('h3', {}, el('i', { style: `background:${cor}` }), rotulo, el('span', { textContent: String(pessoas.length) })), lista, mais)
+    }
+    carregarPanorama()
+
     // ── atividade recente ──
     async function carregarAtividade() {
       try { conferencias = (await window.agent.conferencias()) || {} } catch { /* app antigo aberto */ }
       renderSemana()
+      renderEstadoChamada()
       renderAtencao()
       const h = await window.agent.historico()
       $('atividade').replaceChildren(...(h.length ? h.map(e => el('div', { className: 'evento' },

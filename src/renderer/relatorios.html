@@ -61,6 +61,68 @@
     .paginacao { display: flex; justify-content: space-between; align-items: center; gap: 12px; margin-top: 14px; font-size: 13px; color: var(--texto-3); flex-wrap: wrap; }
     .paginacao div { display: flex; gap: 8px; }
 
+    /* gráficos: série única = uma cor (a de ação); texto sempre em cor de texto */
+    .graficos { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 20px; }
+    .graficos:empty { display: none; }
+    .graficos .largo { grid-column: 1 / -1; }
+    .graficos .cartao { padding: 20px 22px; }
+    body.carregando #kpis, body.carregando #graficos, body.carregando #tabCorpo { opacity: .6; transition: opacity .15s; }
+
+    .plot { position: relative; padding-left: 40px; }
+    .plot .grade { position: absolute; left: 40px; right: 0; height: 1px; background: #EEEEEB; }
+    .plot .grade span { position: absolute; right: calc(100% + 8px); top: -8px; font-size: 11px; color: var(--texto-3); font-variant-numeric: tabular-nums; }
+    .plot .base { background: #DADAD6; }
+    .colunas { position: relative; display: flex; align-items: flex-end; gap: 2px; height: 168px; }
+    .coluna { flex: 1 1 0; min-width: 6px; height: 100%; display: flex; flex-direction: column; justify-content: flex-end; align-items: center; background: none; border: 0; padding: 0; cursor: pointer; font: inherit; border-radius: 6px; }
+    .coluna:hover, .coluna:focus-visible { background: rgba(36, 81, 214, .06); outline: none; }
+    .coluna i { display: block; width: 100%; max-width: 24px; background: var(--acao); border-radius: 4px 4px 0 0; }
+    .coluna:hover i, .coluna:focus-visible i { background: var(--acao-escura); }
+    .coluna .rot { font-size: 11px; font-weight: 600; color: var(--texto-2); margin-bottom: 4px; font-variant-numeric: tabular-nums; }
+    .eixo-x { display: flex; gap: 2px; margin-top: 6px; }
+    .eixo-x span { flex: 1 1 0; min-width: 6px; text-align: center; font-size: 11px; color: var(--texto-3); white-space: nowrap; }
+
+    .lista-barras { display: flex; flex-direction: column; gap: 2px; }
+    .barra-h { display: grid; grid-template-columns: minmax(0, 190px) minmax(0, 1fr); align-items: center; gap: 12px; min-height: 32px; padding: 4px 8px; border: 0; border-radius: 8px; background: none; text-align: left; font: inherit; color: inherit; cursor: pointer; }
+    .barra-h:hover, .barra-h:focus-visible, .barra-h[aria-pressed="true"] { background: var(--realce); outline: none; }
+    .barra-h:disabled { cursor: default; background: none; }
+    .barra-h .rot { font-size: 13px; color: var(--texto-2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .barra-h .trilho { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 8px; }
+    .barra-h .trilho > span:first-child { display: block; }
+    .barra-h i { display: block; height: 12px; min-width: 2px; background: var(--acao); border-radius: 0 4px 4px 0; }
+    .barra-h:disabled i { background: #C4C4BE; }
+    .barra-h .val { font-size: 12px; color: var(--texto-2); white-space: nowrap; font-variant-numeric: tabular-nums; }
+    .nota-grafico { font-size: 12px; color: var(--texto-3); margin-top: 10px; }
+
+    .dica { position: fixed; z-index: 30; max-width: 260px; padding: 8px 10px; border-radius: 8px; background: var(--texto); color: #FFFFFF; font-size: 12px; line-height: 1.45; box-shadow: var(--sombra-3); pointer-events: none; display: flex; flex-direction: column; gap: 1px; }
+    .dica b { font-size: 13px; }
+
+    /* detalhamento do colaborador */
+    .painel-fundo { position: fixed; inset: 0; z-index: 20; background: rgba(20, 20, 22, .28); display: flex; justify-content: flex-end; }
+    .painel { width: min(640px, 100%); height: 100%; overflow-y: auto; background: var(--fundo); box-shadow: var(--sombra-3); padding: 24px; display: flex; flex-direction: column; gap: 16px; animation: deslizar .2s ease-out both; }
+    @keyframes deslizar { from { transform: translateX(24px); opacity: 0; } to { transform: none; opacity: 1; } }
+    .painel-topo { display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; }
+    .painel-topo h2 { font-size: 20px; font-weight: 600; letter-spacing: -.01em; }
+    .painel-topo .sub { font-size: 13px; color: var(--texto-3); margin-top: 2px; }
+    #pCorpo { display: flex; flex-direction: column; gap: 16px; }
+    .mini-kpis { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px; }
+    .mini-kpis div { background: var(--superficie); border: 1px solid var(--borda); border-radius: 14px; padding: 12px 14px; display: flex; flex-direction: column; gap: 2px; }
+    .mini-kpis span { font-size: 12px; color: var(--texto-3); }
+    .mini-kpis b { font-size: 22px; font-weight: 600; letter-spacing: -.02em; }
+    .divergente-plot .colunas { height: 160px; align-items: stretch; }
+    .divergente-plot .coluna { justify-content: flex-start; position: relative; }
+    .divergente-plot .coluna i { position: absolute; left: 50%; transform: translateX(-50%); width: 100%; }
+    .divergente-plot .coluna i.depois { background: #D4622A; border-radius: 4px 4px 0 0; }
+    .divergente-plot .coluna i.antes { background: var(--acao); border-radius: 0 0 4px 4px; }
+    .divergente-plot .coluna .cod { position: absolute; left: 0; right: 0; text-align: center; font-family: var(--mono); font-size: 10px; color: var(--texto-3); }
+    .divergente-plot .limite { z-index: 1; pointer-events: none; position: absolute; left: 40px; right: 0; border-top: 1px dashed #D4622A; opacity: .7; }
+    .divergente-plot .limite span { position: absolute; right: 0; top: -16px; font-size: 11px; color: var(--texto-2); background: var(--superficie); padding: 0 4px; }
+    .legenda-h { display: flex; gap: 16px; flex-wrap: wrap; font-size: 12px; color: var(--texto-2); margin-top: 10px; }
+    .legenda-h span { display: inline-flex; align-items: center; gap: 6px; }
+    .legenda-h i { width: 10px; height: 10px; border-radius: 3px; }
+
+    @media (max-width: 900px) { .graficos { grid-template-columns: minmax(0, 1fr); } }
+    @media (max-width: 560px) { .mini-kpis { grid-template-columns: repeat(2, minmax(0, 1fr)); } .barra-h { grid-template-columns: minmax(0, 110px) minmax(0, 1fr); } .painel { padding: 16px; } }
+
     @media (max-width: 760px) {
       main { padding: 20px 16px 72px; }
       .topo { padding: 0 16px; }
@@ -124,6 +186,8 @@
 
     <section class="kpis" id="kpis" aria-label="Indicadores"></section>
 
+    <div class="graficos" id="graficos"></div>
+
     <section class="cartao" aria-label="Registros">
       <div class="cabeca">
         <div><h2 class="titulo-secao">Registros</h2><div class="sub" id="tabSub"></div></div>
@@ -134,6 +198,18 @@
   </main>
 
   <div class="toast" id="toast" hidden role="status"></div>
+  <div class="dica" id="dica" role="tooltip" hidden></div>
+
+  <!-- Detalhamento de um colaborador -->
+  <div class="painel-fundo" id="painelFundo" hidden>
+    <aside class="painel" role="dialog" aria-modal="true" aria-labelledby="pNome">
+      <div class="painel-topo">
+        <div><h2 id="pNome"></h2><div class="sub" id="pSub"></div></div>
+        <button class="btn icone" id="pFechar" aria-label="Fechar">✕</button>
+      </div>
+      <div id="pCorpo"></div>
+    </aside>
+  </div>
 
   <script src="ui.js"></script>
   <script>
@@ -232,8 +308,11 @@
     // ── dados ──
     async function carregar(avisar) {
       const n = ++consulta
+      // Mantém o que está na tela, só esmaecido, enquanto a resposta não chega (sem piscar).
+      document.body.classList.add('carregando')
       const r = await ipc(() => window.agent.pontualidade(criterios()))
       if (n !== consulta) return
+      document.body.classList.remove('carregando')
       if (!r.ok) {
         $('periodoTexto').textContent = ''
         $('kpis').replaceChildren()
@@ -250,6 +329,7 @@
       renderPeriodo()
       renderOpcoes()
       renderKpis()
+      renderGraficos()
       renderTabela()
       $('btnLimpar').hidden = !['adm', 'busca', 'setor', 'classe', 'motivo'].some(k => filtros[k])
       $('btnExportar').disabled = !rel.registros.length
@@ -380,8 +460,9 @@
         campo('Pelo ponto seria', r.codigoBot ? `"${r.codigoBot}"` : 'sem decisão (precisa de uma pessoa)'),
         campo('Nome no ponto', r.nomePonto),
         campo('Detalhe', r.motivo, true),
-        el('div', { className: 'longo' },
-          r.adm ? el('button', { className: 'btn pequeno', textContent: filtros.adm === r.adm ? 'Mostrar todos os colaboradores' : `Ver só ${r.nome.split(' ')[0]}`, onClick: e => { e.stopPropagation(); filtrarPor('adm', r.adm) } }) : null))
+        r.adm ? el('div', { className: 'longo', style: 'display:flex;gap:8px;flex-wrap:wrap' },
+          el('button', { className: 'btn primario pequeno', textContent: `Ver histórico de ${r.nome.split(' ')[0]}`, onClick: e => { e.stopPropagation(); abrirColaborador(r.adm) } }),
+          el('button', { className: 'btn pequeno', textContent: filtros.adm === r.adm ? 'Mostrar todos os colaboradores' : `Filtrar só ${r.nome.split(' ')[0]}`, onClick: e => { e.stopPropagation(); filtrarPor('adm', r.adm) } })) : null)
     }
 
     function vazio(titulo, texto, botao, fn) {
@@ -389,6 +470,190 @@
         el('div', { className: 'icone', html: '<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#6B6B73" stroke-width="1.8" stroke-linecap="round"><path d="M4 20V10M10 20V4M16 20v-7M22 20H2"/></svg>' }),
         el('b', { textContent: titulo }), el('span', { textContent: texto }),
         el('button', { className: 'btn primario pequeno', textContent: botao, onClick: fn }))
+    }
+
+    // ── dica (tooltip): mouse e teclado mostram o mesmo ──
+    function comDica(alvo, linhas) {
+      const dica = $('dica')
+      const mostrar = () => {
+        const [titulo, ...resto] = linhas()
+        dica.replaceChildren(el('b', { textContent: titulo }), ...resto.filter(Boolean).map(t => el('span', { textContent: t })))
+        dica.hidden = false
+        const r = alvo.getBoundingClientRect(), d = dica.getBoundingClientRect()
+        const x = Math.min(Math.max(8, r.left + r.width / 2 - d.width / 2), innerWidth - d.width - 8)
+        const y = r.top - d.height - 8 < 8 ? r.bottom + 8 : r.top - d.height - 8
+        dica.style.left = x + 'px'; dica.style.top = y + 'px'
+      }
+      const esconder = () => { dica.hidden = true }
+      alvo.addEventListener('mouseenter', mostrar); alvo.addEventListener('focus', mostrar)
+      alvo.addEventListener('mouseleave', esconder); alvo.addEventListener('blur', esconder)
+      alvo.addEventListener('click', esconder)
+      return alvo
+    }
+    const pctTexto = p => (p === null ? '—' : `${String(p).replace('.', ',')}%`)
+    const resumoContagem = c => [
+      `${c.pontual + c.adiantado} no horário · ${plural(c.atraso, 'atraso', 'atrasos')}`,
+      c.ausencia || c.pendente || c.divergente ? [c.ausencia && plural(c.ausencia, 'ausência', 'ausências'), c.pendente && plural(c.pendente, 'pendente', 'pendentes'), c.divergente && plural(c.divergente, 'divergência', 'divergências')].filter(Boolean).join(' · ') : '',
+    ]
+
+    // ── gráficos ──
+    // Rótulo a cada `passo` dias e sempre no último — mas nunca um rótulo colado no último.
+    const rotuloEixo = (k, n, passo) => k === n - 1 || (k % passo === 0 && k + passo <= n - 1)
+    function cartaoGrafico(titulo, sub, corpo, largo) {
+      return el('section', { className: 'cartao' + (largo ? ' largo' : '') },
+        el('div', { className: 'cabeca', style: 'margin-bottom:14px' }, el('div', {}, el('h2', { className: 'titulo-secao', textContent: titulo }), el('div', { className: 'sub', textContent: sub }))),
+        corpo)
+    }
+    function renderGraficos() {
+      const g = $('graficos')
+      if (!rel.registros.length && !rel.porDia.length) return g.replaceChildren()
+      const cartoes = [cartaoGrafico('Evolução da pontualidade', 'Pontuais + adiantados ÷ quem bateu ponto, por dia. Clique num dia para ver só ele.', graficoEvolucao(), true)]
+      cartoes.push(cartaoGrafico('Principais motivos', 'O que tirou os registros do "pontual". Clique para filtrar.', graficoMotivos()))
+      cartoes.push(cartaoGrafico('Quem mais precisa de atenção', 'Ocorrências (atrasos, divergências e pendências) · minutos de atraso. Clique para ver o histórico.', graficoRanking()))
+      if (rel.porSetor.length >= 2) cartoes.push(cartaoGrafico('Pontualidade por setor', 'Clique para filtrar o setor.', graficoSetores(), true))
+      g.replaceChildren(...cartoes)
+    }
+
+    // Colunas de % (eixo fixo 0–100%). Rótulo só no último dia; menor e maior vão numa linha embaixo; o resto, na dica.
+    function graficoEvolucao() {
+      const dias = rel.porDia
+      if (!dias.length) return el('div', { className: 'nota-grafico', textContent: 'Sem dias no período.' })
+      const comPct = dias.filter(d => d.contagem.pontualidadePct !== null)
+      const menor = comPct.length > 1 ? comPct.reduce((a, b) => (b.contagem.pontualidadePct < a.contagem.pontualidadePct ? b : a)) : null
+      const maior = comPct.length > 1 ? comPct.reduce((a, b) => (b.contagem.pontualidadePct > a.contagem.pontualidadePct ? b : a)) : null
+      const ultimo = comPct[comPct.length - 1]
+      const passo = Math.ceil(dias.length / 6)
+      const grade = [100, 50, 0].map(v => el('div', { className: 'grade' + (v === 0 ? ' base' : ''), style: `top:${(1 - v / 100) * 168}px` }, el('span', { textContent: v + '%' })))
+      const colunas = dias.map(d => {
+        const p = d.contagem.pontualidadePct
+        const rot = d === ultimo ? el('span', { className: 'rot', textContent: pctTexto(p) }) : null
+        const b = el('button', {
+          className: 'coluna', 'aria-label': `${diaLongo(d.chave)}: pontualidade ${pctTexto(p)}`,
+          onClick: () => { periodo = 'custom'; filtros.inicio = filtros.fim = d.chave; aplicarPeriodo('custom'); mudou() },
+        }, rot, el('i', { style: `height:${p === null ? 0 : Math.max(2, (p / 100) * 168)}px` }))
+        return comDica(b, () => [diaLongo(d.chave), `Pontualidade ${pctTexto(p)}`, ...resumoContagem(d.contagem)])
+      })
+      return el('div', {},
+        el('div', { className: 'plot' }, ...grade, el('div', { className: 'colunas' }, ...colunas)),
+        el('div', { className: 'plot' }, el('div', { className: 'eixo-x' }, ...dias.map((d, k) => el('span', { textContent: rotuloEixo(k, dias.length, passo) ? dataCurta(d.chave) : '' })))),
+        menor && maior ? el('div', { className: 'nota-grafico', textContent: `Pior dia: ${nomeDia(menor.chave)} (${pctTexto(menor.contagem.pontualidadePct)}) · melhor: ${nomeDia(maior.chave)} (${pctTexto(maior.contagem.pontualidadePct)})` }) : null)
+    }
+
+    // Lista de barras horizontais (série única). `itens`: { rotulo, valor, texto, ativo, onClick, dica }.
+    function listaBarras(itens, max) {
+      return el('div', { className: 'lista-barras' }, ...itens.map(it => comDica(el('button', {
+        className: 'barra-h', disabled: !it.onClick, 'aria-pressed': String(!!it.ativo), onClick: it.onClick || null,
+        'aria-label': `${it.rotulo}: ${it.texto}`,
+      }, el('span', { className: 'rot', textContent: it.rotulo }),
+        el('span', { className: 'trilho' }, el('span', {}, el('i', { style: `width:${max ? Math.max(1, (100 * it.valor) / max) : 0}%` })), el('span', { className: 'val', textContent: it.texto }))),
+      () => it.dica || [it.rotulo, it.texto])))
+    }
+
+    function graficoMotivos() {
+      const ms = rel.porMotivo
+      if (!ms.length) return el('div', { className: 'nota-grafico', textContent: 'Nenhum registro fora do horário no período — todos pontuais.' })
+      const TOP = 6
+      const itens = ms.slice(0, TOP).map(m => ({ rotulo: m.motivo, valor: m.total, texto: String(m.total), ativo: filtros.motivo === m.motivo, onClick: () => filtrarPor('motivo', m.motivo) }))
+      const resto = ms.slice(TOP)
+      if (resto.length) itens.push({ rotulo: `Outros (${resto.length})`, valor: resto.reduce((s, m) => s + m.total, 0), texto: String(resto.reduce((s, m) => s + m.total, 0)), dica: ['Outros motivos', ...resto.map(m => `${m.motivo}: ${m.total}`)] })
+      return listaBarras(itens, ms[0].total)
+    }
+
+    function graficoRanking() {
+      const cs = rel.colaboradores.filter(c => c.ocorrencias > 0)
+      if (!cs.length) return el('div', { className: 'nota-grafico', textContent: 'Ninguém com atraso, divergência ou pendência no período.' })
+      const TOP = 8
+      const lista = listaBarras(cs.slice(0, TOP).map(c => ({
+        rotulo: c.nome, valor: c.ocorrencias,
+        texto: `${c.ocorrencias}${c.minutosAtraso ? ` · ${c.minutosAtraso} min` : ''}`,
+        onClick: c.adm ? () => abrirColaborador(c.adm) : null,
+        dica: [c.nome, `ADM ${c.adm || '?'}${c.setor ? ' · ' + c.setor : ''}`, plural(c.contagem.atraso, 'atraso', 'atrasos') + (c.minutosAtraso ? ` (${c.minutosAtraso} min além do previsto)` : ''),
+          [c.contagem.divergente && plural(c.contagem.divergente, 'divergência', 'divergências'), c.contagem.pendente && plural(c.contagem.pendente, 'pendência', 'pendências')].filter(Boolean).join(' · ')],
+      })), cs[0].ocorrencias)
+      return el('div', {}, lista, cs.length > TOP ? el('div', { className: 'nota-grafico', textContent: `E mais ${plural(cs.length - TOP, 'colaborador', 'colaboradores')} com ocorrências — veja na tabela.` }) : null)
+    }
+
+    function graficoSetores() {
+      return listaBarras(rel.porSetor.map(s => ({
+        rotulo: s.chave, valor: s.contagem.pontualidadePct ?? 0, texto: pctTexto(s.contagem.pontualidadePct),
+        ativo: filtros.setor === s.chave, onClick: s.chave === 'Sem setor' ? null : () => filtrarPor('setor', s.chave),
+        dica: [s.chave, `Pontualidade ${pctTexto(s.contagem.pontualidadePct)}`, ...resumoContagem(s.contagem)],
+      })), 100)
+    }
+
+    // ── detalhamento do colaborador (mesmo período da tela, ignora os outros filtros) ──
+    let painelOrigem = null
+    async function abrirColaborador(adm) {
+      painelOrigem = document.activeElement
+      const r = await ipc(() => window.agent.pontualidade(Object.fromEntries(Object.entries({ inicio: filtros.inicio, fim: filtros.fim, adm }).filter(([, v]) => v))))
+      if (!r.ok) return toast(r.message)
+      const regs = [...r.registros].sort((a, b) => a.data.localeCompare(b.data))
+      const ult = regs[regs.length - 1]
+      $('pNome').textContent = ult ? ult.nome : `ADM ${adm}`
+      $('pSub').textContent = `ADM ${adm}${ult && ult.setor ? ' · ' + ult.setor : ''} · ${filtros.inicio || filtros.fim ? `${filtros.inicio ? dataCurta(filtros.inicio) : 'início'} a ${filtros.fim ? dataCurta(filtros.fim) : 'hoje'}` : 'todo o histórico'}`
+      const c = r.contagem
+      const mini = (rotulo, valor, detalhe) => el('div', {}, el('span', { textContent: rotulo }), el('b', { textContent: valor }), detalhe ? el('span', { textContent: detalhe }) : null)
+      $('pCorpo').replaceChildren(
+        el('div', { className: 'mini-kpis' },
+          mini('Pontualidade', pctTexto(c.pontualidadePct)),
+          mini('Atrasos', String(c.atraso), r.minutosAtraso ? `${r.minutosAtraso} min além do previsto` : ''),
+          mini('Adiantados', String(c.adiantado)),
+          mini('Ausências', String(c.ausencia), c.pendente ? plural(c.pendente, 'pendente', 'pendentes') : '')),
+        el('section', { className: 'cartao' },
+          el('div', { className: 'cabeca', style: 'margin-bottom:14px' }, el('div', {}, el('h2', { className: 'titulo-secao', textContent: 'Chegada × horário previsto' }), el('div', { className: 'sub', textContent: 'Minutos de diferença por dia. A linha tracejada é o limite da tolerância.' }))),
+          graficoChegadas(regs)),
+        el('section', { className: 'cartao' },
+          el('h2', { className: 'titulo-secao', style: 'margin-bottom:10px', textContent: 'Histórico' }),
+          tabelaHistorico([...regs].reverse())),
+        el('div', {}, el('button', { className: 'btn pequeno', textContent: filtros.adm === adm ? 'Mostrar todos na tabela' : 'Filtrar a tabela por este colaborador', onClick: () => { fecharColaborador(); filtrarPor('adm', adm) } })))
+      $('painelFundo').hidden = false
+      $('pFechar').focus()
+    }
+    function fecharColaborador() {
+      $('painelFundo').hidden = true
+      $('dica').hidden = true
+      if (painelOrigem && painelOrigem.focus) painelOrigem.focus()
+    }
+    $('pFechar').onclick = fecharColaborador
+    $('painelFundo').addEventListener('click', e => { if (e.target === $('painelFundo')) fecharColaborador() })
+    document.addEventListener('keydown', e => { if (e.key === 'Escape' && !$('painelFundo').hidden) fecharColaborador() })
+
+    // Barras divergentes em torno do previsto (0): depois = laranja pra cima, antes = azul pra baixo.
+    // Dia sem batida mostra o código (AT, F, FE…) no lugar da barra.
+    function graficoChegadas(regs) {
+      if (!regs.length) return el('div', { className: 'nota-grafico', textContent: 'Sem registros no período.' })
+      const H = 160
+      const difs = regs.map(r => r.diferencaMin).filter(d => d !== null)
+      const tol = Math.max(0, ...regs.map(r => r.toleranciaMin ?? 0))
+      const lim = Math.max(15, tol + 5, ...difs.map(Math.abs))
+      const meio = H / 2, y = m => meio - (m / lim) * (meio - 4)
+      const passo = Math.ceil(regs.length / 6)
+      const grade = [[lim, `+${lim}`], [0, 'prev.'], [-lim, `−${lim}`]].map(([v, t]) => el('div', { className: 'grade' + (v === 0 ? ' base' : ''), style: `top:${y(v)}px` }, el('span', { textContent: t })))
+      const colunas = regs.map(r => {
+        const d = r.diferencaMin
+        let marca
+        if (d === null) marca = el('span', { className: 'cod', style: `top:${meio - 16}px`, textContent: r.codigo || '—' })
+        else if (d >= 0) marca = el('i', { className: 'depois', style: `top:${y(d)}px;height:${Math.max(2, meio - y(d))}px` })
+        else marca = el('i', { className: 'antes', style: `top:${meio}px;height:${Math.max(2, y(d) - meio)}px` })
+        return comDica(el('button', { className: 'coluna', 'aria-label': `${diaLongo(r.data)}: ${r.entrada ? `chegou ${r.entrada}, previsto ${r.previsto}` : CLASSES[r.classe].rotulo}` }, marca),
+          () => [diaLongo(r.data), r.entrada ? `Previsto ${r.previsto} · chegou ${r.entrada}` : (r.motivoCurto || 'Sem batida'), d === null ? '' : `${d > 0 ? '+' : d < 0 ? '−' : ''}${Math.abs(d)} min · ${CLASSES[r.classe].rotulo}`])
+      })
+      const limiteTol = tol ? el('div', { className: 'limite', style: `top:${y(tol)}px` }, el('span', { textContent: `tolerância ${tol} min` })) : null
+      return el('div', { className: 'divergente-plot' },
+        el('div', { className: 'plot' }, ...grade, limiteTol, el('div', { className: 'colunas' }, ...colunas)),
+        el('div', { className: 'plot' }, el('div', { className: 'eixo-x' }, ...regs.map((r, k) => el('span', { textContent: rotuloEixo(k, regs.length, passo) ? dataCurta(r.data) : '' })))),
+        el('div', { className: 'legenda-h' },
+          el('span', {}, el('i', { style: 'background:#D4622A' }), 'Chegou depois do previsto'),
+          el('span', {}, el('i', { style: 'background:var(--acao)' }), 'Chegou antes'),
+          el('span', { className: 'ter', textContent: 'Código = dia sem batida (AT, F, FE…)' })))
+    }
+
+    // A "tabela" do gráfico acima: os mesmos valores, legíveis sem cor e sem mouse.
+    function tabelaHistorico(regs) {
+      const cols = COLUNAS.filter(c => ['data', 'previsto', 'entrada', 'diferencaMin', 'classe', 'motivoCurto'].includes(c[0]))
+      return el('div', { className: 'rolagem' }, el('table', {},
+        el('thead', {}, el('tr', {}, ...cols.map(c => el('th', { textContent: c[1] })))),
+        el('tbody', {}, ...regs.map(r => el('tr', {}, ...cols.map(c => el('td', {}, c[3](r))))))))
     }
 
     // ── exportar ──

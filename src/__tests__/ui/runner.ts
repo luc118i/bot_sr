@@ -322,9 +322,31 @@ async function roteiro() {
       const s = [...document.querySelectorAll('#tabCorpo tbody tr.reg')].map(r => r.className)
       return s.length > 0 && s.every(c => /\\batraso\\b/.test(c)) })()`))
     await foto(w, '6-relatorios')
+    // Ranking → detalhamento do colaborador (gráfico + histórico); Esc fecha.
+    await js(wc, `[...document.querySelectorAll('#graficos .barra-h')].find(b => /MARCOS/.test(b.textContent)).click()`)
+    await esperar('painel do colaborador', async () => !(await js(wc, `document.getElementById('painelFundo').hidden`)) && /MARCOS FICTICIO PEREIRA/.test(await textoDe(wc, '#pNome')))
+    await esperar('histórico com a chegada de 28/09', async () => /08:06[\s\S]*\+36 min/.test(await textoDe(wc, '#pCorpo')))
+    await foto(w, '6b-colaborador')
+    await js(wc, `document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }))`)
+    await esperar('painel fechado', () => js(wc, `document.getElementById('painelFundo').hidden`))
     await js(wc, `document.getElementById('navInicio').click()`)
     await naTela('app.html')
     await prepararTela()
+  })
+
+  await passo('tela inicial: saudação, equipe de hoje e "Iniciar chamada" grava o dia mesmo antes do corte', async () => {
+    // O login simulado não traz nome → saudação genérica, sem quebrar.
+    igual(/^(Bom dia|Boa tarde|Boa noite)!$/.test(await textoDe(wc, '#saudacao')), true, 'saudação genérica')
+    await esperar('equipe de hoje', async () => /Total na equipe|não há chamada/.test(await textoDe(wc, '#equipe')))
+    if (/não há chamada/.test(await textoDe(wc, '#equipe'))) {
+      igual(await js(wc, `document.getElementById('btnChamada').disabled`), true, 'sem chamada em domingo/feriado')
+      return
+    }
+    await js(wc, `document.getElementById('btnChamada').click()`)
+    await esperar('chamada concluída', async () => /Pronto\. Conferi 1 dia/.test(await resposta()), 30_000)
+    await esperar('estado da chamada', async () => /Chamada feita às/.test(await textoDe(wc, '#estadoChamada')))
+    igual(await textoDe(wc, '#btnChamada'), 'Atualizar chamada', 'rótulo depois da chamada')
+    await foto(w, '7-painel-do-dia')
   })
 
   await passo('a janela única está maximizada e nunca abriu outra', async () => {

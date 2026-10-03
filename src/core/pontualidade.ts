@@ -44,7 +44,8 @@ export function registrosDoPlano(p: Plano): RegistroPontualidade[] {
   }))
 }
 
-function codigoFinal(i: ItemPlano): string {
+/** O código que está (ou vai ficar) na planilha pra este item; '' = nada. */
+export function codigoFinal(i: ItemPlano): string {
   if (i.situacao === 'escrever' || i.situacao === 'confere' || i.situacao === 'justificado') return i.codigo ?? ''
   if (i.situacao === 'ja_lancado' || i.situacao === 'divergente') return i.valorAtual.trim().toUpperCase()
   return ''
@@ -205,8 +206,9 @@ export function montarRelatorio(todos: RegistroClassificado[], f: FiltrosPontual
     registros: regs,
     contagem: contar(semSituacao),
     minutosAtraso: semSituacao.filter(r => r.classe === 'atraso').reduce((s, r) => s + (r.diferencaMin ?? 0), 0),
-    porDia: agrupar(regs, r => r.data).sort((a, b) => a.chave.localeCompare(b.chave)),
-    porSetor: agrupar(regs, r => r.setor || 'Sem setor').sort((a, b) => b.contagem.total - a.contagem.total),
+    // Pontualidade por dia/setor também é taxa: ignora o filtro de situação como os indicadores.
+    porDia: agrupar(semSituacao, r => r.data).sort((a, b) => a.chave.localeCompare(b.chave)),
+    porSetor: agrupar(semSituacao, r => r.setor || 'Sem setor').sort((a, b) => b.contagem.total - a.contagem.total),
     porMotivo: [...motivos].map(([motivo, total]) => ({ motivo, total })).sort((a, b) => b.total - a.total),
     colaboradores: porColaborador(regs),
     cobertura: { primeiro: dias[0] ?? null, ultimo: dias[dias.length - 1] ?? null, dias: dias.length },

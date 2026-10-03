@@ -9,11 +9,12 @@ import { getLogsDir, getRelatoriosDir, logger } from './logger'
 import type { Plano } from './core/planner'
 import { extrairSpreadsheetId } from './sheets/googleSheets'
 import {
-  abrirGateway, desfazerEscrita, executarEscritaLote, gatewayDaConfig, gravarFerias, justificar, lerConferencias, lerUltimoResultado, listarHistorico, planejarFerias, preencherAutomatico,
+  abrirGateway, buscarNomeDoUsuario, desfazerEscrita, executarEscritaLote, gatewayDaConfig, gravarFerias, justificar, lerConferencias, lerUltimoResultado, listarHistorico, nomeGuardado, panoramaDoDia, planejarFerias, preencherAutomatico,
   registrarConferencias, registrarFeriados, reverterJustificativas, salvarRelatorio, salvarUltimoResultado, semanaDe,
   type EscritaDoDia, type Lote, type ResultadoDesfazer, type ResultadoEscrita,
 } from './service'
 import { consultarPontualidade, registrarPontualidade } from './pontualidade'
+import { primeiroNome } from './core/panorama'
 import { csvPontualidade, type FiltrosPontualidade } from './core/pontualidade'
 import { dadosDaPlanilha, lerRegrasLocais, regrasDaTela, salvarRegras, type RegrasEditaveis } from './regras'
 import type { SheetGateway } from './sheets/gateway'
@@ -402,6 +403,28 @@ function registerIPC(): void {
     } catch (err: any) {
       logger.error('[desfazer]', err.message)
       return { ok: false, message: err.message ?? 'Erro desconhecido', dias }
+    }
+  })
+
+  // Tela inicial: nome de quem usa (do login do ponto, guardado) e a situação da equipe hoje.
+  ipcMain.handle('perfil', async () => {
+    try {
+      const cred = credenciaisPonto(getConfig())
+      const guardado = nomeGuardado(cred.numero)
+      const nome = guardado !== undefined ? guardado : await buscarNomeDoUsuario(new SecullumClient(cred), cred.numero)
+      return { ok: true, nome: primeiroNome(nome) }
+    } catch (err: any) {
+      logger.warn(`[perfil] sem nome pra saudação: ${err.message}`)
+      return { ok: false, nome: null }
+    }
+  })
+  ipcMain.handle('panorama-dia', async () => {
+    try {
+      const r = await panoramaDoDia(abrirGateway(), new SecullumClient(credenciaisPonto(getConfig())))
+      return { ok: true, ...r }
+    } catch (err: any) {
+      logger.warn(`[panorama] ${err.message}`)
+      return { ok: false, message: err.message ?? 'Erro desconhecido' }
     }
   })
 

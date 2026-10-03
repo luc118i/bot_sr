@@ -6,6 +6,7 @@ import { getDataDir, getRelatoriosDir, logger } from './logger'
 import { CODIGOS, parseCodigo, type Codigo } from './core/codigos'
 import type { OverridesGeral } from './core/configPlanilha'
 import { mesesDoPeriodo, planejarFeriasDoMes, type PeriodoFerias } from './core/ferias'
+import { panoramaDoPlano, type PanoramaDia } from './core/panorama'
 import { detectarLayout, nomeAbaDoMes } from './core/layoutMes'
 import { AntesDoCorteError, DiaNaoUtilError, SITUACOES_PENDENTES, contarPendencias, montarPlano, recontarResumo, type Plano } from './core/planner'
 import { pontoDizFeriado, registrosDaApi } from './core/pontoApi'
@@ -583,4 +584,37 @@ function gravarConferencias(todas: Record<string, Conferencia>): void {
   const corte = toISO((() => { const d = new Date(); d.setDate(d.getDate() - 100); return { ano: d.getFullYear(), mes: d.getMonth() + 1, dia: d.getDate() } })())
   for (const k of Object.keys(todas)) if (k < corte) delete todas[k]
   gravarJson(arqConferencias(), todas)
+}
+
+// ── Tela inicial: panorama do dia e nome de quem usa ───────────────────────
+
+export type ResultadoPanorama = { naoUtil: string } | ({ naoUtil?: undefined } & PanoramaDia)
+
+// Prévia do dia de hoje (forçada: vale antes do horário de corte) — o mesmo
+// caminho da chamada, mas só leitura. Domingo e feriado voltam como `naoUtil`.
+export async function panoramaDoDia(gw: SheetGateway, ponto: FontePonto, now: Date = new Date()): Promise<ResultadoPanorama> {
+  const hoje = hojeISO(now)
+  const { lote } = await preencherAutomatico(gw, ponto, { datas: [hoje], apenasConferir: true, forcar: true, now })
+  const plano = lote.planos[0]
+  if (plano) return panoramaDoPlano(plano)
+  if (lote.pulados[0]) return { naoUtil: lote.pulados[0].motivo }
+  throw new Error(lote.erros[0]?.motivo ?? 'Não deu pra montar o panorama de hoje.')
+}
+
+// Nome vindo do login do ponto, guardado em perfil.json (por número de login)
+// pra saudação aparecer na hora nas próximas aberturas. Nunca guarda senha.
+interface Perfil { numero: string; nome: string | null; quando: string }
+const arqPerfil = () => path.join(getDataDir(), 'perfil.json')
+
+export function nomeGuardado(numero: string): string | null | undefined {
+  const p = lerJson<Perfil>(arqPerfil())
+  // undefined = perguntar ao ponto (nunca perguntado, outro login, ou veio sem nome há mais de um dia)
+  return p && p.numero === numero && (p.nome || Date.now() - Date.parse(p.quando) < 86_400_000) ? p.nome : undefined
+}
+
+export async function buscarNomeDoUsuario(cliente: { nomeDoUsuario(): Promise<{ nome: string | null; campos: string[] }> }, numero: string): Promise<string | null> {
+  const { nome, campos } = await cliente.nomeDoUsuario()
+  if (!nome) logger.info(`[perfil] o login do ponto não trouxe nome reconhecível; campos da resposta: ${campos.join(', ') || '(nenhum)'}`)
+  gravarJson(arqPerfil(), { numero, nome, quando: new Date().toISOString() } satisfies Perfil)
+  return nome
 }
